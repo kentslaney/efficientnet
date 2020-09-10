@@ -2,13 +2,12 @@ import tensorflow as tf
 
 expand = lambda r: lambda x: (x,) * r if tf.rank(x) == 0 else x
 
-class Border(tf.Module):
+class Border:
     default = None
 
-    def __init__(self, width, stride=1, rank=2, trainable=True, name=None):
-        super().__init__(name=name)
+    def __init__(self, width, stride=1, rank=2, register=None):
         assert self.default is not None and tf.rank(self.default) == 0
-        self.rank, self.trainable = rank, trainable
+        self.rank, self.register = rank, register or tf.Variable
         width, stride = map(expand(rank), (width, stride))
         self.stride = tf.convert_to_tensor(stride)
         self.values = [[self.initialize(size, i, axis, bool(end))
@@ -84,12 +83,11 @@ class Border(tf.Module):
 class BorderReweight(Border):
     default = tf.constant(1.)
 
-    @tf.Module.with_name_scope
     def initialize(self, size, width, axis, end):
         name = f"border_reweight_axis{axis}_{'end' if end else 'start'}"
         res = tf.range(width - size, width)[::-1 if end else 1]
         res = tf.cast((res + 1) / res, tf.float32)
-        return tf.Variable(res, self.trainable, name=name)
+        return self.register(res, name=name)
 
     @classmethod
     def compose(_, a, b):
@@ -107,10 +105,9 @@ class BorderReweight(Border):
 class BorderOffset(Border):
     default = tf.constant(0.)
 
-    @tf.Module.with_name_scope
     def initialize(self, size, width, axis, end):
         name = f"border_bias_axis{axis}_{'end' if end else 'start'}"
-        return tf.Variable(tf.zeros((size,)), self.trainable, name=name)
+        return self.register(tf.zeros((size,)), name=name)
 
     @classmethod
     def compose(_, a, b):

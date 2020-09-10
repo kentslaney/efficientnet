@@ -72,9 +72,8 @@ class TestBorderOffset(unittest.TestCase):
 
 class TestConvLayer(unittest.TestCase):
     def test(self):
-        self.assertEqual(True, tf.reduce_all(Conv2D(
-            4, 3, 2, "same", kernel_initializer="ones")(
-                tf.ones((1, 5, 5, 1))) == 9))
+        conv = Conv2D(4, 3, 2, "same", kernel_initializer="ones")
+        self.assertEqual(True, tf.reduce_all(conv(tf.ones((1, 5, 5, 1))) == 9))
 
 if __name__ == '__main__':
     unittest.main()
