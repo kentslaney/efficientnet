@@ -272,7 +272,7 @@ class RotPad(Rotate):
         return res @ [[1, 0, bounds[0][1]], [0, 1, bounds[0][0]], [0, 0, 1]]
 
 class Flip(Augmentation):
-    level, integers, required = ((0, 1),), True, True
+    level, integers, required, flips = ((0, 1),), True, True, False
 
     def augment(self, im, value):
         return im if value > 0 else tf.image.flip_left_right(im)
