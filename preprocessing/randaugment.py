@@ -34,15 +34,34 @@ class Augmentation:
     offset = 0
     def inputs(self, cls, m):
         if cls.integers:
-            res = tuple(m * (j - i + 0.8) + i - 0.4 for i, j in cls.level)
-            res = tuple(tf.cast(tf.math.round(i), tf.int32) for i in res)
+            res = tuple(tf.math.round(m * (j - i + 0.8) + i - 0.4)
+                        for i, j in cls.level)
         else:
             res = tuple(m * (j - i) + i for i, j in cls.level)
 
         if cls.flips:
-            res = tuple(cls.offset + i * (
-                1 if tf.random.uniform(()) < 0.5 else -1) for i in res)
+            res = tuple(float(cls.offset) + i * (
+                1. if tf.random.uniform(()) < 0.5 else -1.) for i in res)
+
+        if cls.integers:
+            res = tuple(tf.cast(i, tf.int32) for i in res)
+
         return res
+
+    @property
+    def tracking(self):
+        return set(sum((i.track for i in self.__class__.__mro__
+                        if hasattr(i, "track")), ()))
+
+    @property
+    def variables(self):
+        return tuple(getattr(self, i) for i in self.tracking)
+
+    @variables.setter
+    def variables(self, value):
+        for i in zip(self.tracking, value):
+            setattr(self, *i)
+        
 
 class Blended(Augmentation):
     def inputs(self, cls, m):
@@ -50,8 +69,8 @@ class Blended(Augmentation):
 
     def augment(self, im1, value, f):
         im0 = f(im1)
-        if tf.rank(value) == 0 and value == int(value):
-            return (im0, im1)[int(value)]
+        if tf.rank(value) == 0 and value == value // 1:
+            return im1 if value > 0 else im0
         return tf.clip_by_value(im0 + value * (im1 - im0), 0., 1.)
 
 class Color(Blended):
@@ -73,15 +92,13 @@ class Sharpness(Blended):
         super().__init__(*args, **kwargs)
         if not hasattr(__class__, "kernel"):
             size, center = __class__.size, __class__.center
-
             kernel = tf.ones((size, size, 1, 1))
             kernel = tf.tensor_scatter_nd_update(
                 kernel, [[size // 2, size // 2, 0, 0]], [center])
             kernel /= tf.reduce_sum(kernel)
             __class__.kernel = tf.tile(kernel, [1, 1, 3, 1])
-
             __class__.reweight = BorderReweight(
-                size, register=lambda x, *a, **k: x)
+                size, register=lambda x, *a, **k: tf.Variable(x, False))
 
     def alter(self, im):
         res = tf.nn.depthwise_conv2d(
@@ -138,7 +155,7 @@ class AutoContrast(Augmentation):
         lo = tf.reduce_min(im, (0, 1), True)
         hi = tf.reduce_max(im, (0, 1), True)
         scale = tf.math.maximum(tf.math.divide_no_nan(1., hi - lo), 1.)
-        offset = tf.where(lo == hi, 0, lo)
+        offset = tf.where(lo == hi, 0., lo)
         return (im - offset) * scale
 
 class Equalize(Augmentation):
@@ -185,19 +202,20 @@ class Transformation(Augmentation):
         return im
 
 class ApplyTransform(Blended):
-    required, _output, _transform = True, None, tf.eye(3)
+    required, _output, _transform = True, tf.zeros((2,), tf.int32), tf.eye(3)
     replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
+    track = ("_output", "_transform")
 
     def inputs(self, cls, m):
         return ()
 
     def augment(self, im):
-        if self._transform is __class__._transform and \
-           self._output is __class__._output:
-            return im
         im = tf.concat((im, tf.ones(tf.shape(im)[:-1])[..., tf.newaxis]), -1)
-        flat = tf.reshape(self._transform, -1)
+        if tf.reduce_all(self._output == 0):
+            self._output = tf.shape(im)[:-1]
+        flat = tf.reshape(self._transform, (-1,))
         im = transform(im, flat[:-1] / flat[-1], "BILINEAR", self._output)
+
         self._output, self._transform = __class__._output, __class__._transform
         return Blended.augment(
             self, im[..., :-1], im[..., -1:], lambda _: __class__.replace)
@@ -272,14 +290,20 @@ class Randomize:
             tf.range(m, dtype=tf.int64)[tf.newaxis, :], m, n, True, m
         ).sampled_candidates
 
+    @tf.function
     def __call__(self, im):
         chosen = self.sample(self.n, self.k)
         chosen = tf.gather(self.r, chosen)
         updates = tf.repeat(True, tf.shape(chosen)[0])
         mask = tf.scatter_nd(chosen[:, tf.newaxis], updates, (len(self.ops),))
         for i in range(len(self.ops)):
-            if self.req[i] or mask[i]:
+            if self.req[i]:
                 im = self.ops[i](im, self.m)
+            else:
+                identity = self.variables
+                im, self.variables = tf.cond(
+                    mask[i], lambda: (self.ops[i](im, self.m), self.variables),
+                    lambda: (im, identity))
         return im
 
 class Adjust(Flip, Equalize, Posterize, Convert01, AutoContrast, Invert,
