@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from efficientnet.border import BorderTrainer
 from datetime import datetime
-import os.path, argparse
+import os, argparse
 
 relpath = lambda *args: os.path.join(
     os.path.dirname(os.path.abspath(__file__)), *args)
@@ -48,13 +48,27 @@ def main(dataset, preset, base, name, channels_last, batch, distribute):
                 lambda x, y: (tf.tile(x, (1, 1, 3)), y),
                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
-    name = name.format(time=datetime.today().strftime("%Y-%m-%d-%H-%M-%S"))
-    callbacks = [] if base is None else [
-        tf.keras.callbacks.TensorBoard(
-            relpath(base, name, "logs"), update_freq=100),
-        tf.keras.callbacks.ModelCheckpoint(
-            relpath(base, name, "ckpts", "ckpt_{epoch}")),
-    ]
+    if base is None:
+        callbacks = []
+    else:
+        time = datetime.today().strftime("%Y_%m_%d_%H_%M_%S")
+        formatted = name.format(time=time)
+        base = relpath(base, name)
+        ckpts, logs = os.path.join(base, "ckpts"), os.path.join(base, "logs")
+        os.makedirs(ckpts, exist_ok=True)
+        prev = ((i.stat().st_ctime, i.path) for i in os.scandir(ckpts))
+        prev = max(prev, default=(None, None))[1]
+        if prev is not None:
+            print(f"Restoring weights from checkpoint {prev}")
+            model.load_weights(prev)
+        elif formatted != name:
+            print(f'Writing to training directory {formatted}')
+
+        callbacks = [
+            tf.keras.callbacks.TensorBoard(logs, update_freq=100),
+            tf.keras.callbacks.ModelCheckpoint(
+                os.path.join(ckpts, "ckpt_{epoch}")),
+        ]
 
     model.fit(*data, callbacks=callbacks, batch_size=batch)
 
