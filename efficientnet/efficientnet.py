@@ -1,15 +1,18 @@
 import tensorflow as tf
 from functools import partial
-from MBConv import MBConv
+from .mbconv import MBConv
+from math import ceil
 
 class Block:
     def __init__(self, size=3, outputs=32, expand=6, strides=1, repeats=1):
         self.size, self.outputs, self.expand, self.strides, self.repeats = \
             size, outputs, expand, strides, repeats
 
-    def __dict__(self):
-        return {"size": self.size, "outputs": self.outputs,
-                "expand": self.expand, "strides": self.strides}
+    def keys(self):
+        return ("size", "outputs", "expand", "strides")
+
+    def __getitem__(self, key):
+        return getattr(self, key)
 
 class Embedding(tf.keras.Model):
     base = MBConv
@@ -31,9 +34,8 @@ class Embedding(tf.keras.Model):
     def __init__(self, width, depth, dropout=0.2, divisor=8, stem=32,
                  data_format='channels_first', name=None):
         super().__init__(name)
-        self.width, self.depth, self.divisor, self.dropout, self.connect, \
-            self.data_format = width, depth, divisor, dropout, connect, \
-                data_format
+        self.width, self.depth, self.divisor, self.dropout, \
+            self.data_format = width, depth, divisor, dropout, data_format
         self.stem = self.round_filters(stem)
         self.total = sum(block.repeats for block in self.blocks)
 
@@ -45,6 +47,7 @@ class Embedding(tf.keras.Model):
         for block in self.blocks:
             block.outputs = self.round_filters(block.outputs)
             block.repeats = self.round_repeats(block.repeats)
+        __class__._build(self)
 
     def kwargs(self, i):
         return {"dropout": self.dropout * i / self.total,
@@ -61,9 +64,9 @@ class Embedding(tf.keras.Model):
         return int(rounded)
 
     def round_repeats(self, repeats):
-        return int(math.ceil(self.depth * repeats))
+        return int(ceil(self.depth * repeats))
 
-    def build(self, input_shape):
+    def _build(self):
         self._stem_conv = self.conv(self.stem, 3, 2, use_bias=False)
         self._stem_bn = self.bn()
 
@@ -77,8 +80,8 @@ class Embedding(tf.keras.Model):
         x = self._stem_conv(inputs)
         x = tf.nn.swish(self._stem_bn(x, training))
 
-        for i, block in enumerate(self._blocks):
-            x = block.call(x, training)
+        for block in self._blocks:
+            x = block(x, training)
         return x
 
 class Classifier(Embedding):
@@ -86,16 +89,16 @@ class Classifier(Embedding):
         scale=1 / 3, mode='fan_out', distribution='uniform')
     drop = tf.keras.layers.Dropout
 
-    def __init__(*args, head_drop=0.2, outputs=1000, head=1280, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, head_drop=0.2, outputs=1000, head=1280, **kw):
+        super().__init__(*args, **kw)
         self.outputs, self.head_drop = outputs, head_drop
         self.head = self.round_filters(head)
         self._head_drop = self.drop(head_drop)
-        self.pool = keras.layers.GlobalAveragePooling2D(
+        self.pool = tf.keras.layers.GlobalAveragePooling2D(
             data_format=self.data_format)
+        __class__._build(self)
 
-    def build(self, input_shape):
-        super().build(input_shape)
+    def _build(self):
         self._head_conv = self.conv(self.stem, 1, use_bias=False)
         self._head_bn = self.bn()
         self._fc = tf.keras.layers.Dense(
@@ -104,4 +107,3 @@ class Classifier(Embedding):
     def call(self, inputs, training):
         x = super().call(inputs, training)
         return self._fc(self._head_drop(self.pool(x)))
-

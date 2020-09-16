@@ -137,12 +137,6 @@ class Convert01(Augmentation):
     def augment(self, im):
         return im / 255
 
-class Convert11(Augmentation):
-    required = True
-
-    def augment(self, im):
-        return im * 2 - 1
-
 class Posterize(Augmentation):
     level, flips, integers = ((0, 4),), False, True
 
@@ -302,7 +296,6 @@ class Randomize:
             tf.range(m, dtype=tf.int64)[tf.newaxis, :], m, n, True, m
         ).sampled_candidates
 
-    @tf.function
     def __call__(self, im):
         chosen = self.sample(self.n, self.k)
         chosen = tf.gather(self.r, chosen)
@@ -318,45 +311,79 @@ class Randomize:
                     lambda: (im, identity))
         return im
 
+class Pipeline:
+    def __call__(self, im):
+        for op in self.ops:
+            im = op(im, 0)
+        return im
+
 class Adjust(Flip, Equalize, Posterize, Convert01, AutoContrast, Invert,
              Solarize, SolarizeAdd, Color, Contrast, Brightness, Sharpness,
              Cutout):
     pass
 
-class Reshape(ApplyTransform):
+class Reshape:
     required = True
 
     def __init__(self, shape, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.shape = tf.convert_to_tensor(shape)
 
-class Stretch(Compose, Reshape):
+class Stretch(Compose, Reshape, ApplyTransform):
     def transform(self, im):
         ratio = tf.cast(self.output(im) / self.shape, tf.float32)
         self._output = self.shape
         return tf.linalg.diag(tf.concat((ratio, (1.,)), 0))
 
-class Crop(Reshape):
-    def __init__(self, *args, a=9., b=1., **kwargs):
+class Crop(Reshape, ApplyTransform):
+    def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kwargs):
         super().__init__(*args, **kwargs)
-        self.crop_sample = tfp.distributions.Beta(a, b).sample
+        dist = tfp.distributions.Beta(a, b)
+        iid = lambda: dist.sample((2,))
+        same = lambda: tf.repeat(dist.sample(), 2)
+        ones = lambda: tf.constant([1., 1.])
+        self.crop_sample = ones if not recrop else iid if distort else same
+        self.distort = distort
 
     def augment(self, im):
         self._output, bounds = self.shape, self.bounds(self.shape)
         valid = tf.cast(tf.shape(im)[:-1], tf.float32)
         crop = (self._transform @ bounds)[:-1] / valid[:, tf.newaxis]
         extrema = tf.stack([tf.reduce_min(crop, 1), tf.reduce_max(crop, 1)])
-        rand = self.crop_sample((2,))
-        scale = rand / (extrema[1] - extrema[0])
-        offset = -valid * scale * extrema[0]
-        offset += valid * tf.random.uniform((2,)) * (1 - rand)
+        limit = 1 / (extrema[1] - extrema[0])
+        scale = self.crop_sample() * (
+            limit if self.distort else tf.reduce_min(limit))
+        offset = -valid * scale * extrema[0] + \
+            valid * tf.random.uniform((2,)) * (limit - scale) / limit
         self._transform = [[scale[0], 0,        offset[0]],
                            [0,        scale[1], offset[1]],
                            [0,        0,        1        ]] @ self._transform
-        return Reshape.augment(self, im)
+        return ApplyTransform.augment(self, im)
+
+class CenterCrop(Reshape, Augmentation):
+    def augment(self, im):
+        return tf.keras.preprocessing.image.smart_resize(im, self.shape)
+
+class Reformat(Augmentation):
+    required = True
+
+    def __init__(self, *args, data_format="channels_first", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.channels_last = data_format == "channels_last"
+
+    def augment(self, im):
+        im = im if self.channels_last else tf.transpose(im, [2, 0, 1])
+        return im * 2 - 1
 
 class RandAugmentPad(Randomize, Adjust, PaddedRotate, Translate, Shear,
-                     Stretch, Convert11):
+                     Stretch, Reformat):
     pass
 
-class RandAugmentCrop(Randomize, Adjust, Shear, Rotate, Crop, Convert11):
+class RandAugmentCrop(Randomize, Adjust, Shear, Rotate, Crop, Reformat):
+    pass
+
+class PrepStretch(Pipeline, Convert01, Stretch, Reformat):
+    pass
+
+class PrepCrop(Pipeline, Convert01, CenterCrop, Reformat):
     pass
