@@ -1,5 +1,5 @@
 import tensorflow as tf
-from border import BorderOffset, BorderReweight
+from .border import BorderOffset, BorderReweight
 
 class BorderConv:
     def register(self, kernel=False):

@@ -1,8 +1,8 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from efficientnet.trainer import Trainer
+from efficientnet.border import BorderTrainer
 
-model = Trainer.from_preset(0, data_format="channels_last")
+model = BorderTrainer.from_preset(0, data_format="channels_last")
 train, test = tfds.load('mnist', split=['train', 'test'], shuffle_files=True,
                         as_supervised=True)
 train = train.map(lambda x, y: (tf.tile(x, (1, 1, 3)), y),
