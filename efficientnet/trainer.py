@@ -2,16 +2,16 @@ import tensorflow as tf
 from preprocessing.randaugment import RandAugmentCrop, PrepStretch
 from .efficientnet import Classifier
 
-presets = [ # size, *args
-    (224, 1.0, 1.0, 0.2), # B0
-    (240, 1.0, 1.1, 0.2), # B1
-    (260, 1.1, 1.2, 0.3), # B2
-    (300, 1.2, 1.4, 0.3), # B3
-    (380, 1.4, 1.8, 0.4), # B4
-    (456, 1.6, 2.2, 0.4), # B5
-    (528, 1.8, 2.6, 0.5), # B6
-    (600, 2.0, 3.1, 0.5), # B7
-    (800, 4.3, 5.3, 0.5), # L2
+presets = [
+    ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),
+    ("EfficientNet-B1", 240, 1.0, 1.1, 0.2),
+    ("EfficientNet-B2", 260, 1.1, 1.2, 0.3),
+    ("EfficientNet-B3", 300, 1.2, 1.4, 0.3),
+    ("EfficientNet-B4", 380, 1.4, 1.8, 0.4),
+    ("EfficientNet-B5", 456, 1.6, 2.2, 0.4),
+    ("EfficientNet-B6", 528, 1.8, 2.6, 0.5),
+    ("EfficientNet-B7", 600, 2.0, 3.1, 0.5),
+    ("EfficientNet-L2", 800, 4.3, 5.3, 0.5),
 ]
 
 class Trainer(Classifier):
@@ -30,9 +30,8 @@ class Trainer(Classifier):
         validation_batch_size = batch_size if validation_batch_size is None \
             else validation_batch_size
         x = x.map(self.aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        x = x.shuffle(1000)
-        x = x.batch(batch_size)
-        x = x.prefetch(tf.data.experimental.AUTOTUNE)
+        x = x.shuffle(1000).batch(batch_size).prefetch(
+            tf.data.experimental.AUTOTUNE)
         if validation_data is not None:
             validation_data = validation_data.map(
                 self.prep, num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -43,4 +42,5 @@ class Trainer(Classifier):
 
     @classmethod
     def from_preset(cls, i, **kwargs):
-        return cls(*presets[i], **kwargs)
+        name, *args = presets[i]
+        return cls(*args, name=name, **kwargs)
