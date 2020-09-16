@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow_addons.image import transform
+import tensorflow_probability as tfp
 from functools import partial
 from collections import defaultdict
 from border.border import BorderReweight
@@ -146,7 +147,7 @@ class Posterize(Augmentation):
     level, flips, integers = ((0, 4),), False, True
 
     def augment(self, im, value):
-        shift = tf.cast(8 - value, tf.uint8)
+        shift = tf.cast(tf.math.round(8 - value), tf.uint8)
         res = tf.bitwise.right_shift(im, shift)
         return tf.bitwise.left_shift(res, shift)
 
@@ -190,31 +191,45 @@ class Cutout(Augmentation):
         mask = tf.pad(tf.ones(bounds[1] - bounds[0]), padding)[..., tf.newaxis]
         return tf.where(mask > 0, __class__.replace, im)
 
-class Transformation(Augmentation):
+class Compose:
     flips = True
 
     def inputs(self, cls, m):
-        return (partial(cls.transform, self),
-                ) + Augmentation.inputs(self, cls, m)
+        above = cls.__mro__[cls.__mro__.index(__class__) + 1:]
+        g = next((partial(i.augment, self) for i in above
+                  if hasattr(i, "augment")), lambda im, *_: im)
+        return (partial(cls.transform, self), g) + \
+            Augmentation.inputs(self, cls, m)
 
-    def augment(self, im, f, *args):
-        self._transform = f(im, *args) @ self._transform
-        return im
+    def augment(self, im, f, g, *args):
+        self._transform @= f(im, *args)
+        return g(im, *args)
+
+class Transformation(Compose, Augmentation):
+    pass
 
 class ApplyTransform(Blended):
     required, _output, _transform = True, tf.zeros((2,), tf.int32), tf.eye(3)
     replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
     track = ("_output", "_transform")
 
+    def output(self, im):
+        return tf.shape(im)[:-1] if tf.reduce_all(
+            self._output == 0) else self._output
+
+    def bounds(self, shape):
+        bounds = tf.unstack([[0, 0], shape], axis=-1)
+        bounds = tf.stack(tf.meshgrid(*bounds), -1)
+        bounds = tf.cast(tf.reshape(bounds, (4, 2)), tf.float32)
+        return tf.transpose(tf.concat((bounds, tf.ones((4, 1))), -1))
+
     def inputs(self, cls, m):
         return ()
 
-    def augment(self, im):
+    def augment(self, im, *_):
         im = tf.concat((im, tf.ones(tf.shape(im)[:-1])[..., tf.newaxis]), -1)
-        if tf.reduce_all(self._output == 0):
-            self._output = tf.shape(im)[:-1]
         flat = tf.reshape(self._transform, (-1,))
-        im = transform(im, flat[:-1] / flat[-1], "BILINEAR", self._output)
+        im = transform(im, flat[:-1] / flat[-1], "BILINEAR", self.output(im))
 
         self._output, self._transform = __class__._output, __class__._transform
         return Blended.augment(
@@ -224,14 +239,14 @@ class TranslateX(Transformation):
     level = ((0, 0.4),)
 
     def transform(self, im, value):
-        value *= tf.cast(tf.shape(im)[0], tf.float32)
+        value *= tf.cast(tf.shape(im)[1], tf.float32)
         return [[1, 0, value], [0, 1, 0], [0, 0, 1]]
 
 class TranslateY(Transformation):
     level = ((0, 0.4),)
 
     def transform(self, im, value):
-        value *= tf.cast(tf.shape(im)[1], tf.float32)
+        value *= tf.cast(tf.shape(im)[0], tf.float32)
         return [[1, 0, 0], [0, 1, value], [0, 0, 1]]
 
 class Translate(TranslateX, TranslateY):
@@ -260,13 +275,10 @@ class Rotate(Transformation):
                 [tf.sin(v),  tf.cos(v), 0],
                 [0, 0, 1]]
 
-class RotPad(Rotate):
+class PaddedRotate(Rotate):
     def transform(self, im, v):
         res = tf.convert_to_tensor(Rotate.transform(self, im, v))
-        bounds = tf.unstack([[0, 0], tf.shape(im)[:-1]], axis=-1)
-        bounds = tf.reshape(tf.stack(tf.meshgrid(*bounds), -1), (4, 2))
-        bounds = tf.concat((tf.cast(bounds, tf.float32), tf.ones((4, 1))), -1)
-        bounds = res @ tf.transpose(bounds)
+        bounds = res @ self.bounds(tf.shape(im)[:-1])
         bounds = tf.stack([tf.reduce_min(bounds, 1), tf.reduce_max(bounds, 1)])
         self._output = tf.cast(bounds[1] - bounds[0], tf.int32)[:-1]
         return res @ [[1, 0, bounds[0][1]], [0, 1, bounds[0][0]], [0, 0, 1]]
@@ -278,8 +290,8 @@ class Flip(Augmentation):
         return im if value > 0 else tf.image.flip_left_right(im)
 
 class Randomize:
-    def __init__(self, n=3, m=.4):
-        super().__init__()
+    def __init__(self, *args, n=3, m=.4, **kwargs):
+        super().__init__(*args, **kwargs)
         self.n, self.m = len(self.ops) - sum(self.req) if n < 0 else n, m
         self.k = len(self.ops) - sum(self.req)
         self.r = tf.range(self.k) + tf.cumsum(self.req)[
@@ -311,5 +323,40 @@ class Adjust(Flip, Equalize, Posterize, Convert01, AutoContrast, Invert,
              Cutout):
     pass
 
-class RandAugment(Randomize, Adjust, RotPad, Translate, Shear, ApplyTransform):
+class Reshape(ApplyTransform):
+    required = True
+
+    def __init__(self, shape, *args, **kwargs):
+        self.shape = tf.convert_to_tensor(shape)
+
+class Stretch(Compose, Reshape):
+    def transform(self, im):
+        ratio = tf.cast(self.output(im) / self.shape, tf.float32)
+        self._output = self.shape
+        return tf.linalg.diag(tf.concat((ratio, (1.,)), 0))
+
+class Crop(Reshape):
+    def __init__(self, *args, a=9., b=1., **kwargs):
+        super().__init__(*args, **kwargs)
+        self.crop_sample = tfp.distributions.Beta(a, b).sample
+
+    def augment(self, im):
+        self._output, bounds = self.shape, self.bounds(self.shape)
+        valid = tf.cast(tf.shape(im)[:-1], tf.float32)
+        crop = (self._transform @ bounds)[:-1] / valid[:, tf.newaxis]
+        extrema = tf.stack([tf.reduce_min(crop, 1), tf.reduce_max(crop, 1)])
+        rand = self.crop_sample((2,))
+        scale = rand / (extrema[1] - extrema[0])
+        offset = -valid * scale * extrema[0]
+        offset += valid * tf.random.uniform((2,)) * (1 - rand)
+        self._transform = [[scale[0], 0,        offset[0]],
+                           [0,        scale[1], offset[1]],
+                           [0,        0,        1        ]] @ self._transform
+        return Reshape.augment(self, im)
+
+class RandAugmentPad(Randomize, Adjust, PaddedRotate, Translate, Shear,
+                     Stretch, Convert11):
+    pass
+
+class RandAugmentCrop(Randomize, Adjust, Shear, Rotate, Crop, Convert11):
     pass
