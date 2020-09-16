@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from efficientnet.trainer import Trainer
-from efficientnet.border import BorderTrainer
+from border.efficientnet import Trainer as BorderTrainer
 from datetime import datetime
 import os, argparse
 
