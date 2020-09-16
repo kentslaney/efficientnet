@@ -79,10 +79,11 @@ if __name__ == "__main__":
     parser.add_argument("--batch", metavar="SIZE", type=int, default=32, help=(
         "batch size per visible device (1 unless distributed)"))
     parser.add_argument(
-        "--distribute", metavar="STRATEGY DEVICE...", nargs="+", default=None,
-        help=("what distribution strategy to use from tf.distribute, and "
-              "what devices to distribute to (usually no specified device "
-              "implies all visable devices); leaving this unspecified results "
-              "in no strategy, and uses tensorflow's default behavior"))
+        "--distribute", metavar=("STRATEGY", "DEVICE"), nargs="+",
+        default=None, help=(
+            "what distribution strategy to use from tf.distribute, and "
+            "what devices to distribute to (usually no specified device "
+            "implies all visable devices); leaving this unspecified results "
+            "in no strategy, and uses tensorflow's default behavior"))
 
     main(**vars(parser.parse_args()))
