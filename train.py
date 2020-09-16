@@ -20,7 +20,8 @@ class NoStrategy:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-def main(dataset, preset, base, name, channels_last, batch, distribute):
+def main(dataset, preset, no_base, base, name, channels_last, batch,
+         distribute):
     distribute, *devices = distribute or [None]
     assert not distribute or hasattr(tf.distribute, distribute)
     devices = None if len(devices) == 1 else \
@@ -48,7 +49,7 @@ def main(dataset, preset, base, name, channels_last, batch, distribute):
                 lambda x, y: (tf.tile(x, (1, 1, 3)), y),
                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
-    if base is None:
+    if no_base:
         callbacks = []
     else:
         time = datetime.today().strftime("%Y_%m_%d_%H_%M_%S")
@@ -80,10 +81,11 @@ if __name__ == "__main__":
         "support as_supervised"))
     parser.add_argument("--preset", metavar="N", type=int, default=0, help=(
         "which preset to use; 0-7 correspond to B0 to B7, and 8 is L2"))
-    parser.add_argument("--base", metavar="PATH", default=None, help=(
+    parser.add_argument("--no-base", action="store_true", help=(
+        "prevents saving checkpoints or tensorboard logs to disk"))
+    parser.add_argument("--base", metavar="PATH", default="runs", help=(
         "prefix for training directory; relative paths are relative to the "
-        "location of this script, leaving this unspecified will result in no "
-        "tensorboard logs or checkpoints"))
+        "location of this script"))
     parser.add_argument("--name", metavar="DIR", default="{time}", help=(
         "name template for the training directory, compiled using python's "
         "string formatting; time is the only currently supported variable"))
