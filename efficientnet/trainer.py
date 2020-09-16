@@ -15,10 +15,10 @@ presets = [ # size, *args
 ]
 
 class Trainer(Classifier):
-    def __init__(self, size, *args, data_format="channels_first", **kwargs):
-        super().__init__(*args, data_format=data_format, **kwargs)
-        self._aug = RandAugmentCrop((size, size), data_format=data_format)
-        self._prep = PrepStretch((size, size), data_format=data_format)
+    def __init__(self, size, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._aug = RandAugmentCrop((size, size), data_format=self.data_format)
+        self._prep = PrepStretch((size, size), data_format=self.data_format)
         self.aug = lambda x, *y: (self._aug(x),) + y
         self.prep = lambda x, *y: (self._prep(x),) + y
         self.compile("adam", "sparse_categorical_crossentropy",

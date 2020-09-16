@@ -7,3 +7,4 @@ class MBBorderConv(MBConv):
 
 class BorderTrainer(Trainer):
     base = MBConv
+    conv = Conv2D
