@@ -35,9 +35,8 @@ class Trainer(Classifier):
         if validation_data is not None:
             validation_data = validation_data.map(
                 self.prep, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-            validation_data = validation_data.batch(validation_batch_size)
-            validation_data = validation_data.prefetch(
-                tf.data.experimental.AUTOTUNE)
+            validation_data = validation_data.batch(
+                validation_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
         return super().fit(x, validation_data=validation_data, **kwargs)
 
     @classmethod

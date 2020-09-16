@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from efficientnet.trainer import Trainer
 from efficientnet.border import BorderTrainer
 from datetime import datetime
 import os, argparse
@@ -20,10 +21,13 @@ class NoStrategy:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-def main(dataset, preset, no_base, base, name, channels_last, batch,
-         distribute):
+def main(dataset, preset, border_conv, no_base, base, name, channels_last,
+         batch, distribute):
     distribute, *devices = distribute or [None]
     assert not distribute or hasattr(tf.distribute, distribute)
+    if channels_last is None:
+        channels_last = distribute == "TPUStrategy" or not bool(
+            tf.config.experimental.list_physical_devices('GPU'))
     devices = None if len(devices) == 1 else \
         devices[1] if distribute == "OneDeviceStrategy" else devices
     if distribute == "TPUStrategy":
@@ -35,7 +39,8 @@ def main(dataset, preset, no_base, base, name, channels_last, batch,
         if type(distribute) is str else distribute or NoStrategy()
     batch *= distribute.num_replicas_in_sync
     with distribute.scope():
-        model = BorderTrainer.from_preset(preset, data_format=(
+        model = BorderTrainer if border_conv else Trainer
+        model = model.from_preset(preset, data_format=(
             "channels_last" if channels_last else "channels_first"))
 
     data, info = tfds.load(dataset, split=["train", "test"], with_info=True,
@@ -81,6 +86,8 @@ if __name__ == "__main__":
         "support as_supervised"))
     parser.add_argument("--preset", metavar="N", type=int, default=0, help=(
         "which preset to use; 0-7 correspond to B0 to B7, and 8 is L2"))
+    parser.add_argument("--border-conv", action="store_true", help=(
+        "use border corrected convolutions"))
     parser.add_argument("--no-base", action="store_true", help=(
         "prevents saving checkpoints or tensorboard logs to disk"))
     parser.add_argument("--base", metavar="PATH", default="runs", help=(
@@ -89,9 +96,6 @@ if __name__ == "__main__":
     parser.add_argument("--name", metavar="DIR", default="{time}", help=(
         "name template for the training directory, compiled using python's "
         "string formatting; time is the only currently supported variable"))
-    parser.add_argument("--channels-last", action="store_true", help=(
-        "sets the image data format to channels last, which is faster for CPU "
-        "and TPU"))
     parser.add_argument("--batch", metavar="SIZE", type=int, default=32, help=(
         "batch size per visible device (1 unless distributed)"))
     parser.add_argument(
@@ -101,5 +105,13 @@ if __name__ == "__main__":
             "what devices to distribute to (usually no specified device "
             "implies all visable devices); leaving this unspecified results "
             "in no strategy, and uses tensorflow's default behavior"))
+
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument("--channels-last", action="store_true", help=(
+        "forces the image data format to be channels last"))
+    group.add_argument(
+        "--channels-first", dest="channels_last", action="store_false", help=(
+        "forces the image data format to be channels last"))
+    parser.set_defaults(channels_last=None)
 
     main(**vars(parser.parse_args()))
