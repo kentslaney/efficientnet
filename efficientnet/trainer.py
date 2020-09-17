@@ -21,7 +21,7 @@ class Trainer(Classifier):
         self._prep = PrepStretch((size, size), data_format=self.data_format)
         self.aug = lambda x, *y: (self._aug(x),) + y
         self.prep = lambda x, *y: (self._prep(x),) + y
-        self.compile("adam", "sparse_categorical_crossentropy",
+        self.compile("rmsprop", "sparse_categorical_crossentropy",
                      ["sparse_categorical_accuracy"])
 
     def fit(self, x, validation_data=None, batch_size=None,
