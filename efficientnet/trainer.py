@@ -1,5 +1,6 @@
 import tensorflow as tf
-from preprocessing.randaugment import RandAugmentCrop, PrepStretch
+from preprocessing.randaugment import (
+    RandAugmentCrop, RandAugmentPad, PrepStretch)
 from .efficientnet import Classifier
 
 presets = [
@@ -15,9 +16,10 @@ presets = [
 ]
 
 class Trainer(Classifier):
-    def __init__(self, size, *args, **kwargs):
+    def __init__(self, size, *args, pad=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self._aug = RandAugmentCrop((size, size), data_format=self.data_format)
+        aug = RandAugmentPad if pad else RandAugmentCrop
+        self._aug = aug((size, size), data_format=self.data_format)
         self._prep = PrepStretch((size, size), data_format=self.data_format)
         self.aug = lambda x, *y: (self._aug(x),) + y
         self.prep = lambda x, *y: (self._prep(x),) + y
@@ -29,9 +31,9 @@ class Trainer(Classifier):
         batch_size = 32 if batch_size is None else batch_size
         validation_batch_size = batch_size if validation_batch_size is None \
             else validation_batch_size
+        x = x.shuffle(1000)
         x = x.map(self.aug, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        x = x.shuffle(1000).batch(batch_size).prefetch(
-            tf.data.experimental.AUTOTUNE)
+        x = x.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
         if validation_data is not None:
             validation_data = validation_data.map(
                 self.prep, num_parallel_calls=tf.data.experimental.AUTOTUNE)

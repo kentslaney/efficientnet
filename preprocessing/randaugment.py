@@ -62,7 +62,6 @@ class Augmentation:
     def variables(self, value):
         for i in zip(self.tracking, value):
             setattr(self, *i)
-        
 
 class Blended(Augmentation):
     def inputs(self, cls, m):
@@ -333,7 +332,7 @@ class Stretch(Compose, Reshape, ApplyTransform):
     def transform(self, im):
         ratio = tf.cast(self.output(im) / self.shape, tf.float32)
         self._output = self.shape
-        return tf.linalg.diag(tf.concat((ratio, (1.,)), 0))
+        return tf.linalg.diag(tf.concat((ratio[::-1], (1.,)), 0))
 
 class Crop(Reshape, ApplyTransform):
     def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kwargs):
@@ -346,8 +345,8 @@ class Crop(Reshape, ApplyTransform):
         self.distort = distort
 
     def augment(self, im):
-        self._output, bounds = self.shape, self.bounds(self.shape)
-        valid = tf.cast(tf.shape(im)[:-1], tf.float32)
+        self._output, bounds = self.shape, self.bounds(self.shape[::-1])
+        valid = tf.cast(tf.shape(im)[:-1][::-1], tf.float32)
         crop = (self._transform @ bounds)[:-1] / valid[:, tf.newaxis]
         extrema = tf.stack([tf.reduce_min(crop, 1), tf.reduce_max(crop, 1)])
         limit = 1 / (extrema[1] - extrema[0])

@@ -22,7 +22,30 @@ class NoStrategy:
         pass
 
 def main(dataset, preset, border_conv, no_base, base, name, channels_last,
-         batch, distribute):
+         batch, distribute, pad, augment_only):
+    if augment_only:
+        from preprocessing.randaugment import RandAugmentCrop, RandAugmentPad
+        data, info = tfds.load(dataset, split="train", with_info=True,
+                               shuffle_files=True)
+        aug = RandAugmentPad if pad else RandAugmentCrop
+        aug = aug((224, 224), data_format="channels_last")
+        data = data.map(lambda x: {**x, "image": aug(x["image"]) / 2 + 0.5},
+                        num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        fig = tfds.show_examples(data, info)
+        fig.show()
+        return
+
+    data, info = tfds.load(dataset, split=["train", "test"], with_info=True,
+                           shuffle_files=True, as_supervised=True)
+    data = list(data)
+
+    # repeat channels so augmentations have 3 input channels as expected
+    for i in range(len(data)):
+        if info.features[info.supervised_keys[0]].shape[-1] == 1:
+            data[i] = data[i].map(
+                lambda x, y: (tf.tile(x, (1, 1, 3)), y),
+                num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
     distribute, *devices = distribute or [None]
     assert not distribute or hasattr(tf.distribute, distribute)
     if channels_last is None:
@@ -40,26 +63,17 @@ def main(dataset, preset, border_conv, no_base, base, name, channels_last,
     batch *= distribute.num_replicas_in_sync
     with distribute.scope():
         model = BorderTrainer if border_conv else Trainer
-        model = model.from_preset(preset, data_format=(
-            "channels_last" if channels_last else "channels_first"))
-
-    data, info = tfds.load(dataset, split=["train", "test"], with_info=True,
-                           shuffle_files=True, as_supervised=True)
-    data = list(data)
-
-    # repeat channels so augmentations have 3 input channels as expected
-    for i in range(len(data)):
-        if info.features[info.supervised_keys[0]].shape[-1] == 1:
-            data[i] = data[i].map(
-                lambda x, y: (tf.tile(x, (1, 1, 3)), y),
-                num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        model = model.from_preset(
+            preset, outputs=info.features["label"].num_classes, pad=pad,
+            data_format=(
+                "channels_last" if channels_last else "channels_first"))
 
     if no_base:
         callbacks = []
     else:
         time = datetime.today().strftime("%Y_%m_%d_%H_%M_%S")
         formatted = name.format(time=time)
-        base = relpath(base, name)
+        base = relpath(base, formatted)
         ckpts, logs = os.path.join(base, "ckpts"), os.path.join(base, "logs")
         os.makedirs(ckpts, exist_ok=True)
         prev = ((i.stat().st_ctime, i.path) for i in os.scandir(ckpts))
@@ -81,9 +95,10 @@ def main(dataset, preset, border_conv, no_base, base, name, channels_last,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Train an EfficientNet classifier")
-    parser.add_argument("--dataset", metavar="NAME", default="mnist", help=(
-        "choose which TFDS dataset to train on; must be classification and "
-        "support as_supervised"))
+    parser.add_argument(
+        "--dataset", metavar="NAME", default="imagenette/320px-v2", help=(
+            "choose which TFDS dataset to train on; must be classification "
+            "and support as_supervised"))
     parser.add_argument("--preset", metavar="N", type=int, default=0, help=(
         "which preset to use; 0-7 correspond to B0 to B7, and 8 is L2"))
     parser.add_argument("--border-conv", action="store_true", help=(
@@ -105,6 +120,10 @@ if __name__ == "__main__":
             "what devices to distribute to (usually no specified device "
             "implies all visable devices); leaving this unspecified results "
             "in no strategy, and uses tensorflow's default behavior"))
+    parser.add_argument("--pad", action="store_true", help=(
+        "pads the augmented images instead of cropping them"))
+    parser.add_argument("--augment-only", action="store_true", help=(
+        "only run augmentation for visualization"))
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--channels-last", action="store_true", help=(
