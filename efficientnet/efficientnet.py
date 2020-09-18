@@ -107,4 +107,4 @@ class Classifier(Embedding):
     def call(self, inputs, training):
         x = super().call(inputs, training)
         x = tf.nn.swish(self._head_bn(self._head_conv(x), training))
-        return self._fc(self._head_drop(self.pool(x)))
+        return self._fc(self._head_drop(self.pool(x), training))

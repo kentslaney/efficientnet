@@ -74,7 +74,7 @@ class MBConv(tf.keras.layers.Layer):
         x = self._project_bn(self._project_conv(x), training)
 
         if self.residuals:
-            x += self.drop(inputs)
+            x += self.drop(inputs, training)
 
         return x
 
