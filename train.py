@@ -21,8 +21,8 @@ class NoStrategy:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-def main(dataset, preset, border_conv, no_base, base, name, channels_last,
-         batch, distribute, pad, augment_only):
+def main(dataset, border_conv, no_base, base, name, channels_last, batch,
+         distribute, augment_only, epochs, **kwargs):
     if augment_only:
         from preprocessing.randaugment import RandAugmentCrop, RandAugmentPad
         data, info = tfds.load(dataset, split="train", with_info=True,
@@ -35,16 +35,21 @@ def main(dataset, preset, border_conv, no_base, base, name, channels_last,
         fig.show()
         return
 
-    data, info = tfds.load(dataset, split=["train", "test"], with_info=True,
+    splits = tfds.builder(dataset).info.splits
+    splits = sorted(splits.keys(), key=lambda x: -splits[x].num_examples)
+    data, info = tfds.load(dataset, split=splits, with_info=True,
                            shuffle_files=True, as_supervised=True)
     data = list(data)
 
-    # repeat channels so augmentations have 3 input channels as expected
     for i in range(len(data)):
         if info.features[info.supervised_keys[0]].shape[-1] == 1:
             data[i] = data[i].map(
                 lambda x, y: (tf.tile(x, (1, 1, 3)), y),
                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    for i in data[:-2]:
+        data[-2] = data[-2].concatenate(i)
+    data = data[-2:] if len(data) > 1 else (data, None)
 
     distribute, *devices = distribute or [None]
     assert not distribute or hasattr(tf.distribute, distribute)
@@ -64,8 +69,7 @@ def main(dataset, preset, border_conv, no_base, base, name, channels_last,
     with distribute.scope():
         model = BorderTrainer if border_conv else Trainer
         model = model.from_preset(
-            preset, outputs=info.features["label"].num_classes, pad=pad,
-            data_format=(
+            **kwargs, outputs=info.features["label"].num_classes, data_format=(
                 "channels_last" if channels_last else "channels_first"))
 
     if no_base:
@@ -90,7 +94,7 @@ def main(dataset, preset, border_conv, no_base, base, name, channels_last,
                 os.path.join(ckpts, "ckpt_{epoch}")),
         ]
 
-    model.fit(*data, callbacks=callbacks, batch_size=batch)
+    model.fit(*data, callbacks=callbacks, batch_size=batch, epochs=epochs)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -124,6 +128,13 @@ if __name__ == "__main__":
         "pads the augmented images instead of cropping them"))
     parser.add_argument("--augment-only", action="store_true", help=(
         "only run augmentation for visualization"))
+    parser.add_argument("--no-augment", dest="augment", action="store_false",
+                        help= "don't augment the input")
+    parser.add_argument("--size", metavar="N", type=int, default=None, help=(
+        "force the input image to be a certain size, will default to the "
+        "recommended size for the preset if unset"))
+    parser.add_argument("--epochs", metavar="N", type=int, default=1000, help=(
+        "how many epochs to run"))
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--channels-last", action="store_true", help=(

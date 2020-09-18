@@ -27,7 +27,7 @@ class MBConv(tf.keras.layers.Layer):
         self.bn = partial(self.bn, axis=self.channel)
         self.conv = partial(self.conv, padding='same', data_format=data_format,
                             kernel_initializer=self.initialization)
-        self.depthwise = partial(self.depthwise, data_format=self.data_format,
+        self.depthwise = partial(self.depthwise, data_format=data_format,
                                  depthwise_initializer=self.initialization,
                                  padding='same')
         self.drop = self.drop(self.dropout, noise_shape=(None, 1, 1, 1)) \

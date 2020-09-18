@@ -16,9 +16,10 @@ presets = [
 ]
 
 class Trainer(Classifier):
-    def __init__(self, size, *args, pad=False, **kwargs):
+    def __init__(self, size, *args, pad=False, augment=True, **kwargs):
         super().__init__(*args, **kwargs)
         aug = RandAugmentPad if pad else RandAugmentCrop
+        aug = aug if augment else PrepStretch
         self._aug = aug((size, size), data_format=self.data_format)
         self._prep = PrepStretch((size, size), data_format=self.data_format)
         self.aug = lambda x, *y: (self._aug(x),) + y
@@ -42,6 +43,7 @@ class Trainer(Classifier):
         return super().fit(x, validation_data=validation_data, **kwargs)
 
     @classmethod
-    def from_preset(cls, i, **kwargs):
-        name, *args = presets[i]
-        return cls(*args, name=name, **kwargs)
+    def from_preset(cls, preset, size=None, **kwargs):
+        name, default, *args = presets[preset]
+        size = default if size is None else size
+        return cls(size, *args, name=name, **kwargs)

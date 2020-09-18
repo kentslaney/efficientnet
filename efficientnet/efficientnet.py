@@ -32,8 +32,8 @@ class Embedding(tf.keras.Model):
     ]
 
     def __init__(self, width, depth, dropout=0.2, divisor=8, stem=32,
-                 data_format='channels_first', name=None):
-        super().__init__(name)
+                 data_format='channels_first', **kwargs):
+        super().__init__(**kwargs)
         self.width, self.depth, self.divisor, self.dropout, \
             self.data_format = width, depth, divisor, dropout, data_format
         self.stem = self.round_filters(stem)
@@ -99,11 +99,12 @@ class Classifier(Embedding):
         __class__._build(self)
 
     def _build(self):
-        self._head_conv = self.conv(self.stem, 1, use_bias=False)
+        self._head_conv = self.conv(self.head, 1, use_bias=False)
         self._head_bn = self.bn()
         self._fc = tf.keras.layers.Dense(
-            self.outputs, kernel_initializer=self.dense_init)
+            self.outputs, "softmax", kernel_initializer=self.dense_init)
 
     def call(self, inputs, training):
         x = super().call(inputs, training)
+        x = tf.nn.swish(self._head_bn(self._head_conv(x), training))
         return self._fc(self._head_drop(self.pool(x)))
