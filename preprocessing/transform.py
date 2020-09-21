@@ -90,7 +90,7 @@ class Stretch(Reshape):
         ratio = tf.cast(self.output(im) / self.shape, tf.float32)
         self._output = self.shape
         self._transform @= tf.linalg.diag(tf.concat((ratio[::-1], (1.,)), 0))
-        return ApplyTransform.call(self, im)
+        return super().call(im)
 
 class Crop(Reshape):
     def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kwargs):
@@ -115,7 +115,7 @@ class Crop(Reshape):
         self._transform = [[scale[0], 0,        offset[0]],
                            [0,        scale[1], offset[1]],
                            [0,        0,        1        ]] @ self._transform
-        return ApplyTransform.call(self, im)
+        return super().call(im)
 
 class CenterCrop(Reshape, Augmentation):
     def call(self, im):
