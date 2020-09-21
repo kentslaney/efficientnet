@@ -16,8 +16,6 @@ class Block:
 
 class Embedding(tf.keras.Model):
     base = MBConv
-    conv = tf.keras.layers.Conv2D
-    bn = tf.keras.layers.BatchNormalization
     initialization = tf.keras.initializers.VarianceScaling(
         scale=2.0, mode='fan_out', distribution='untruncated_normal')
 
@@ -39,10 +37,11 @@ class Embedding(tf.keras.Model):
         self.stem = self.round_filters(stem)
         self.total = sum(block.repeats for block in self.blocks)
 
-        self.conv = partial(self.conv, padding='same', data_format=data_format,
-                            kernel_initializer=self.initialization)
+        self.conv = partial(
+            self.base.conv, padding='same', data_format=data_format,
+            kernel_initializer=self.initialization)
         channel = -1 if data_format == 'channels_last' else 1
-        self.bn = partial(self.bn, axis=channel)
+        self.bn = partial(self.base.bn, axis=channel)
 
         for block in self.blocks:
             block.outputs = self.round_filters(block.outputs)
