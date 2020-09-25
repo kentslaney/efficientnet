@@ -26,16 +26,9 @@ class BorderConv:
             self.border_bias = BorderOffset(
                 self.kernel_size, self.strides, self.rank, self.register())
 
-    def build(self, input_shape):
-        super().build(input_shape)
-        self._built = self._build(input_shape, True)
-
-    def _build(self, input_shape, first=False):
+    def _build(self, input_shape):
         input_shape = input_shape[2:] if self._channels_first else \
             input_shape[1:-1]
-        if self.small or first and None in input_shape:
-            return None
-
         weight = tf.expand_dims(self.border_weight(
             input_shape)[tf.newaxis, ...], self._get_channel_axis())
         bias = 0. if not self.use_bias else tf.expand_dims(self.border_bias(
@@ -47,8 +40,7 @@ class BorderConv:
         if self.small:
             return res
 
-        weight, bias = self._build(tf.shape(inputs)) if self._built is None \
-            else self.built
+        weight, bias = self._build(tf.shape(inputs))
         return weight * res + bias
 
 class Conv1D(BorderConv, tf.keras.layers.Conv1D):

@@ -1,5 +1,5 @@
 import argparse, os
-from functools import partial
+from functools import partial, wraps
 from datetime import datetime
 
 class HelpFormatter(argparse.HelpFormatter):
@@ -10,21 +10,50 @@ class HelpFormatter(argparse.HelpFormatter):
         else:
             return super()._format_args(action, default_metavar)
 
+class Duplicate:
+    def __init__(self, *cls):
+        assert len(cls) > 0
+        self.__dict__["cls"] = cls
+
+    def __getattr__(self, key):
+        res = getattr(self.cls[0], key)
+        if callable(res):
+            @wraps(res)
+            def wrapper(*args, **kwargs):
+                out = res(*args, **kwargs)
+                for cls in self.cls[1:]:
+                    getattr(cls, key)(*args, **kwargs) 
+                return out
+            return wrapper
+        return res
+
+    def __setattr__(self, key, value):
+        for cls in self.cls:
+            setattr(cls, key, value)
+
 class ArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, fallthrough=False, formatter_class=HelpFormatter,
-                 **kwargs):
-        super().__init__(*args, formatter_class=formatter_class, **kwargs)
-        self.fallthrough = fallthrough
+    def __init__(self, *args, formatter_class=HelpFormatter, **kwargs):
+        kwargs = {**kwargs, "formatter_class": formatter_class}
+        super().__init__(*args, **kwargs)
+        self._group, self.copy = None, lambda: self.__class__(*args, **kwargs)
+
+    @property
+    def group(self):
+        if self._group is None:
+            self._group = self.copy()
+            self._subgroup = Duplicate(self, self._group)
+        return self._subgroup
 
     def parse_known_args(self, args=None, namespace=None):
-        args, argv = super().parse_known_args(args, namespace)
-        if hasattr(args, "call"):
-            args.caller = args.call
-            if self.fallthrough:
-                args.argv, argv = argv, []
-            args.caller = partial(args.caller, **{i: j for i, j in vars(
-                args).items() if i not in ("call", "caller")})
-        return args, argv
+        res, args = super().parse_known_args(args, namespace)
+        if self._group is not None:
+            res, args = self._group.parse_known_args(args, res)
+        self._group = None
+
+        if hasattr(res, "call"):
+            res.caller = partial(res.call, **{i: j for i, j in vars(
+                res).items() if i not in ("call", "caller")})
+        return res, args
 
 relpath = lambda *args: os.path.join(
     os.path.dirname(os.path.abspath(__file__)), *args)
@@ -68,6 +97,12 @@ def PresetFlag(*preset):
             setattr(namespace, self.dest, list(preset) + values)
     return PresetFlag
 
+def ExtendCLI(f):
+    class ExtendCLI(argparse.Action):
+        def __call__(self, parser, namespace, value, option_string=None):
+            setattr(namespace, self.dest, f(parser.group, value))
+    return ExtendCLI
+
 strftime = lambda: datetime.today().strftime("%Y_%m_%d_%H_%M_%S")
 
 def cli_call(*f):
@@ -76,3 +111,6 @@ def cli_call(*f):
         i(parser)
 
     return parser.parse_args().caller()
+
+def tpu_prep(f):
+    return lambda im: tf.cast(tf.transpose(f(im), [1, 2, 3, 0]), tf.bfloat16)

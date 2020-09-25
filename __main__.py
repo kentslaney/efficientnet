@@ -7,10 +7,11 @@ import train
 
 def cli(parser):
     subparsers = parser.add_subparsers()
-    train.cli(subparsers.add_parser("train", fallthrough=True, help=(
-        "Train a network")))
-    data.cli(subparsers.add_parser("preview", help=(
+    train.cli(subparsers.add_parser("train", help="Train a network"))
+    data.preview_cli(subparsers.add_parser("preview", help=(
         "Preview an augmented dataset")))
+    data.download_cli(subparsers.add_parser("download", help=(
+        "Download a dataset")))
     return parser
 
 cli_call(cli)

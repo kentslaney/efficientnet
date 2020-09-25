@@ -1,5 +1,5 @@
 import tensorflow as tf
-from .base import Augmentation, normalize, Convert01, Group
+from .base import Augmentation, normalize, Convert01, Group, Reformat
 from functools import partial
 from border.border import BorderReweight
 
@@ -94,7 +94,7 @@ class Equalize(Augmentation):
         return tf.gather(tf.cast(lut, tf.uint8), imi)
 
 class Cutout(Augmentation):
-    replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
+    replace = tf.constant(Reformat.mean)[tf.newaxis, tf.newaxis, :]
 
     @normalize((0, 0.6))
     def call(self, im, value):

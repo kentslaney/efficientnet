@@ -1,17 +1,18 @@
 import data, os, importlib, argparse
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from utils import relpath, NoStrategy, PresetFlag, HelpFormatter
+from utils import (
+    relpath, NoStrategy, PresetFlag, HelpFormatter, ExtendCLI, tpu_prep)
 from preprocessing.augment import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded)
 
 class Trainer:
     _base, _format, checkpoint = None, None, None
-    map_wrap = lambda _, f: lambda x, *y: (f(x),) + y
+    mapper = lambda _, f: lambda x, *y: (f(x),) + y
+    opt = tf.keras.optimizers.Adam
 
     def __init__(self, batch, learning_rate):
         self.batch, self.learning_rate = batch, learning_rate
-        self.opt = tf.keras.optimizers.RMSprop(learning_rate, 0.9, 0.9, 0.001)
         self.callbacks = []
 
     @property
@@ -66,18 +67,25 @@ class Trainer:
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
         self.batch *= strategy.num_replicas_in_sync
+        self.learning_rate *= self.batch
+        self.opt = self.opt(self.learning_rate)
         self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
 
     def preprocess(self, train, validation=None):
         tune = tf.data.experimental.AUTOTUNE
+        options = tf.data.Options()
+        options.experimental_deterministic = False
+        if self.tpu:
+            train, validation = map(tpu_prep, (train, validation))
+
         self.dataset = self.dataset.shuffle(1000).map(
-            self.map_wrap(train), num_parallel_calls=tune).batch(
-                self.batch).prefetch(tune)
+            self.mapper(train), tune).batch(
+                self.batch, True).prefetch(tune).with_options(options)
 
         if validation is not None and self.validation is not None:
             self.validation = self.validation.map(
-                self.map_wrap(validation), num_parallel_calls=tune).batch(
-                    self.batch).prefetch(tune)
+                self.mapper(validation), tune).batch(
+                    self.batch, True).prefetch(tune).with_options(options)
 
     def compile(self, *args, **kwargs):
         self.model.compile(self.opt, *args, **kwargs)
@@ -90,19 +98,39 @@ class Trainer:
                        callbacks=self.callbacks, batch_size=self.batch,
                        epochs=epochs)
 
-    def cli(self, parser):
+    @classmethod
+    def cli(cls, parser):
         pass
 
     def build(self, **kwargs):
         pass
 
 class TFDSTrainer(Trainer):
-    def build(self, dataset=None, holdout=None, **kwargs):
-        splits = tfds.builder(dataset).info.splits
-        splits = sorted(splits.keys(), key=lambda x: -splits[x].num_examples)
-        data, info = tfds.load(dataset, split=splits, with_info=True,
+    @classmethod
+    def _tfds_imagenet2012(cls, data_dir):
+        data_dir = os.path.expanduser(
+            tfds.core.constants.DATA_DIR if data_dir is None else data_dir)
+        data_base = os.path.join(data_dir, "downloads", "manual")
+        downloader = tfds.download.DownloadManager(download_dir=data_base)
+        # https://archive.is/0Q3LX#selection-13351.0-13351.32
+        key = "dd31405981ef5f776aa17412e1f0c112"
+        url_base = f"http://image-net.org/challenges/LSVRC/2012/{key}/"
+        files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
+        downloader.download([tfds.download.Resource(
+            url=url_base + fname, path=os.path.join(data_base, fname))
+                for fname in files])
+
+    @classmethod
+    def builder(cls, dataset, data_dir):
+        if hasattr(cls, "_tfds_" + dataset):
+            getattr(cls, "_tfds_" + dataset)(data_dir)
+
+    def build(self, dataset=None, holdout=None, data_dir=None, **kwargs):
+        self.builder(dataset, data_dir)
+        data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
                                shuffle_files=True, as_supervised=True)
-        data = list(data)
+        data = [i[1] for i in sorted(
+            data.items(), key=lambda x: -info.splits[x[0]].num_examples)]
 
         hold = -1 if holdout is False else -2
         for i in data[:hold]:
@@ -113,10 +141,15 @@ class TFDSTrainer(Trainer):
         self.outputs = info.features["label"].num_classes
         super().build(**kwargs)
 
-    def cli(self, parser):
+    @classmethod
+    def cli(cls, parser):
         parser.add_argument("--dataset", default="imagenette/320px-v2", help=(
             "choose which TFDS dataset to train on; must be classification "
             "and support as_supervised"))
+        parser.add_argument(
+            "--size", metavar="N", type=int, default=None, help=(
+                "force the input image to be a certain size, will default to "
+                "the recommended size for the preset if unset"))
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument("--train-all", dest="holdout", action="store_false",
@@ -141,6 +174,7 @@ class RandAugmentTrainer(Trainer):
         validation = PrepStretched(self.size, data_format=self.data_format)
         super().preprocess(train, validation)
 
+    @classmethod
     def cli(self, parser):
         data.augment_cli(parser)
         super().cli(parser)
@@ -163,46 +197,47 @@ def cli_strategy(distribute):
 
     return distribute, tpu
 
-def main(argv, model, base, data_format, batch, distribute, epochs, decay,
-         learning_rate, **kwargs):
+def model_cli(parser, model):
     module = importlib.import_module(model + ".train")
-    trainer = module.Trainer(batch, learning_rate)
-    trainer.distribute(*cli_strategy(distribute))
-    trainer.data_format = data_format
-    if base is not None:
-        trainer.base = base, name
-
-    parser = argparse.ArgumentParser(formatter_class=HelpFormatter)
+    trainer = module.Trainer
     trainer.cli(parser)
-    trainer.build(**vars(parser.parse_args(argv)))
-    if decay:
-        trainer.decay()
+    return trainer
 
-    trainer.preprocess()
-    trainer.fit(epochs)
+def main(model, base, data_format, batch, distribute, epochs, decay, suffix,
+         learning_rate, **kwargs):
+    model = model(batch, learning_rate)
+    model.distribute(*cli_strategy(distribute))
+    model.data_format = data_format
+    if base is not None:
+        model.base = base, suffix
+
+    model.build(**kwargs)
+    if decay:
+        model.decay()
+
+    model.preprocess()
+    model.fit(epochs)
 
 def cli(parser):
-    parser.add_argument("model", metavar="NAME", help=(
-        "select the model that you want to train based on the path relative "
-        "to the base directory"))
+    parser.add_argument("model", action=ExtendCLI(model_cli), help=(
+            "select the model that you want to train based on the path "
+            "relative to the base directory"))
     parser.add_argument(
-        "--dir", metavar="DIR", dest="name", default="{time}", help=(
+        "--dir", metavar="DIR", dest="suffix", default="{time}", help=(
             "name template for the training directory, compiled using "
             "python's string formatting; time is the only currently supported "
             "variable"))
     parser.add_argument(
         "--batch", metavar="SIZE", type=int, default=128, help=(
             "batch size per visible device (1 unless distributed)"))
-    parser.add_argument("--size", metavar="N", type=int, default=None, help=(
-        "force the input image to be a certain size, will default to the "
-        "recommended size for the preset if unset"))
     parser.add_argument("--epochs", metavar="N", type=int, default=1000, help=(
         "how many epochs to run"))
-    parser.add_argument("--lr", metavar="FLOAT", dest="learning_rate",
-                        type=float, default=0.01, help="model learning rate")
+    parser.add_argument(
+        "--lr", dest="learning_rate", type=float, default=6.25e-5, help=(
+            "model learning rate per example per batch"))
     parser.add_argument("--no-decay", dest="decay", action="store_false",
                         help="don't decay the learning rate")
-    parser.add_argument("--name", metavar="NAME", default=None, help=(
+    parser.add_argument("--name", default=None, help=(
         "name to assign to the model; potentially useful to differentiate "
         "exports"))
 
@@ -247,8 +282,8 @@ def cli(parser):
             "--distribute MirroredStrategy [DEVICE...]"))
 
     parser.set_defaults(call=main)
-    return parser
 
 if __name__ == "__main__":
     from utils import ArgumentParser
-    cli(ArgumentParser(fallthrough=True)).parse_args().call()
+    args = cli(ArgumentParser(fallthrough=True))
+    args.parse_args().call()

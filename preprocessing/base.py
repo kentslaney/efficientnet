@@ -176,6 +176,7 @@ class Pipeline(Group):
 
 class Reformat(Augmentation):
     required = True
+    mean, norm = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 
     def __init__(self, *args, data_format="channels_first", **kwargs):
         super().__init__(*args, **kwargs)
@@ -183,4 +184,4 @@ class Reformat(Augmentation):
 
     def call(self, im):
         im = im if self.channels_last else tf.transpose(im, [2, 0, 1])
-        return im * 2 - 1
+        return (im - self.mean) / self.norm

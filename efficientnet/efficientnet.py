@@ -30,10 +30,11 @@ class Embedding(tf.keras.Model):
     ]
 
     def __init__(self, width, depth, dropout=0.2, divisor=8, stem=32,
-                 data_format='channels_first', **kwargs):
+                 data_format='channels_first', pretranspose=False, **kwargs):
         super().__init__(**kwargs)
-        self.width, self.depth, self.divisor, self.dropout, \
-            self.data_format = width, depth, divisor, dropout, data_format
+        self.width, self.depth, self.divisor, self.dropout, self.data_format, \
+            self.pretranspose = width, depth, divisor, dropout, data_format, \
+                pretranspose
         self.stem = self.round_filters(stem)
         self.total = sum(block.repeats for block in self.blocks)
 
@@ -76,7 +77,11 @@ class Embedding(tf.keras.Model):
                 i += 1
 
     def call(self, inputs, training):
-        x = self._stem_conv(inputs)
+        x = inputs
+        if self.pretranspose:
+            x = tf.transpose(x, [3, 0, 1, 2])
+
+        x = self._stem_conv(x)
         x = tf.nn.swish(self._stem_bn(x, training))
 
         for block in self._blocks:

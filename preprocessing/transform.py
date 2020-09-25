@@ -83,7 +83,12 @@ class Reshape(ApplyTransform):
 
     def __init__(self, shape, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.shape = tf.convert_to_tensor(shape)
+        self.shape, self._shape = tf.convert_to_tensor(shape), tuple(shape)
+
+    def caller(self, cls, im, *args, **kwargs):
+        im = super().caller(cls, im, *args, **kwargs)
+        im.set_shape(self._shape + (None,))
+        return im
 
 class Stretch(Reshape):
     def call(self, im):

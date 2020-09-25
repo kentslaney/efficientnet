@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow_addons.optimizers import MovingAverage
 from .efficientnet import Classifier
 from train import RandAugmentTrainer, TFDSTrainer
 from utils import RequiredLength
@@ -15,8 +16,12 @@ presets = [
     ("EfficientNet-L2", 800, 4.3, 5.3, 0.5),
 ]
 
+tf.config.optimizer.set_jit(True)
+
 class Trainer(RandAugmentTrainer, TFDSTrainer):
     base = Classifier
+    opt = lambda _, lr: MovingAverage(
+        tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
     def build(self, size=None, preset=0, custom=None, name=None, **kwargs):
         if custom is None:
@@ -24,13 +29,18 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
             size = _size if size is None else size
             name = _name if name is None else name
         super().build(size=size, **kwargs)
+        self.mapper = lambda f: lambda x, y: (
+            f(x), tf.one_hot(y, self.outputs))
 
-        self.model = self.base(*custom, name=name, outputs=self.outputs,
-                               data_format=self.data_format)
-        self.compile("sparse_categorical_crossentropy",
-                     ["sparse_categorical_accuracy"])
+        self.model = self.base(
+            *custom, name=name, outputs=self.outputs, pretranspose=self.tpu,
+            data_format=self.data_format)
 
-    def cli(self, parser):
+        self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
+                     ["categorical_accuracy"])
+
+    @classmethod
+    def cli(cls, parser):
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument("--preset", metavar="N", type=int, default=0, help=(
             "which preset to use; 0-7 correspond to B0 to B7, and 8 is L2"))

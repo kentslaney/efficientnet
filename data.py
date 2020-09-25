@@ -1,20 +1,27 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from preprocessing.augment import RandAugmentCropped, RandAugmentPadded
+from train import TFDSTrainer
 
-def main(dataset, pad, augment):
-    data, info = tfds.load(dataset, split="train", with_info=True,
-                           shuffle_files=True)
+def download(dataset, data_dir):
+    TFDSTrainer.builder(dataset, data_dir)
+    tfds.load(dataset, split="train", data_dir=data_dir)
+
+def main(dataset, pad, augment, data_dir):
+    TFDSTrainer.builder(dataset, data_dir)
+    data, info = tfds.load(dataset, split="train", data_dir=data_dir,
+                           with_info=True, shuffle_files=True)
 
     if augment:
         aug = RandAugmentPadded if pad else RandAugmentCropped
         aug = aug((224, 224), data_format="channels_last")
-        data = data.map(lambda x: {**x, "image": aug(x["image"]) / 2 + 0.5})
+        data = data.map(lambda x: {**x, "image": tf.clip_by_value(
+            aug(x["image"]) / 5 + 0.5, 0., 1.)})
 
     fig = tfds.show_examples(data, info)
     fig.show()
 
-def cli(parser):
+def preview_cli(parser):
     parser.add_argument(
         "dataset", nargs="?", default="imagenette/320px-v2", help=(
             'choose a TFDS dataset to augment, must have "image" key and '
@@ -22,7 +29,11 @@ def cli(parser):
 
     augment_cli(parser)
     parser.set_defaults(call=main)
-    return parser
+
+def download_cli(parser):
+    parser.add_argument("dataset", help="choose a TFDS dataset to download")
+    data_cli(parser)
+    parser.set_defaults(call=download)
 
 def augment_cli(parser):
     group = parser.add_mutually_exclusive_group(required=False)
@@ -30,8 +41,12 @@ def augment_cli(parser):
         "pads the augmented images instead of cropping them"))
     group.add_argument("--no-augment", dest="augment", action="store_false",
                         help="don't augment the input")
-    return parser
+    data_cli(parser)
+
+def data_cli(parser):
+    parser.add_argument("--data-dir", default=None, help=(
+        "default directory for TFDS data, supports GCS buckets"))
 
 if __name__ == "__main__":
     from utils import cli_call
-    cli_call(cli)
+    cli_call(preview_cli)

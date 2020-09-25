@@ -1,5 +1,5 @@
 import efficientnet.efficientnet
-from .layers import Conv2D
+from border.layers import Conv2D
 from efficientnet.mbconv import MBConv as BaseMBConv
 from efficientnet.train import Trainer as BaseTrainer
 
