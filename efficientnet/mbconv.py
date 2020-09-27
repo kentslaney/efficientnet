@@ -1,10 +1,11 @@
 import tensorflow as tf
 from functools import partial
+from utils import Conv2D
 
 displace = lambda f: lambda _, *args, **kwargs: f(*args, **kwargs)
 
 class MBConv(tf.keras.layers.Layer):
-    conv = tf.keras.layers.Conv2D
+    conv = Conv2D
     depthwise = tf.keras.layers.DepthwiseConv2D
     bn = tf.keras.layers.BatchNormalization
     activation = displace(tf.nn.swish)

@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
 from .efficientnet import Classifier
 from train import RandAugmentTrainer, TFDSTrainer
-from utils import RequiredLength
+from utils import RequiredLength, TPUBatchNormalization
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),
@@ -32,6 +32,8 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
         self.mapper = lambda f: lambda x, y: (
             f(x), tf.one_hot(y, self.outputs))
 
+        if self.tpu:
+            self.base.base.bn = TPUBatchNorm
         self.model = self.base(
             *custom, name=name, outputs=self.outputs, pretranspose=self.tpu,
             data_format=self.data_format)

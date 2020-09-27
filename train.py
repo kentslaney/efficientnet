@@ -1,6 +1,7 @@
-import data, os, importlib, argparse
+import os, importlib, argparse
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from data import augment_cli
 from utils import (
     relpath, NoStrategy, PresetFlag, HelpFormatter, ExtendCLI, tpu_prep)
 from preprocessing.augment import (
@@ -66,7 +67,8 @@ class Trainer:
 
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
-        self.batch *= strategy.num_replicas_in_sync
+        if tf.distribute.in_cross_replica_context():
+            self.batch *= strategy.num_replicas_in_sync
         self.learning_rate *= self.batch
         self.opt = self.opt(self.learning_rate)
         self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
@@ -176,7 +178,7 @@ class RandAugmentTrainer(Trainer):
 
     @classmethod
     def cli(self, parser):
-        data.augment_cli(parser)
+        augment_cli(parser)
         super().cli(parser)
 
 def cli_strategy(distribute):
@@ -259,7 +261,7 @@ def cli(parser):
         "--no-base", action="store_const", const=None, dest="base", help=(
             "prevents saving checkpoints or tensorboard logs to disk"))
     group.add_argument(
-        "--base", metavar="PATH", default=relpath("runs"), help=(
+        "--job-dir", "--base", metavar="PATH", default=relpath("runs"), help=(
             "prefix for training directory"))
 
     group = parser.add_mutually_exclusive_group(required=False)

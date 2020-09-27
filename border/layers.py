@@ -1,5 +1,6 @@
 import tensorflow as tf
 from .border import BorderOffset, BorderReweight
+from utils import Conv2D as SpecializedConv2D
 
 class BorderConv:
     def register(self, kernel=False):
@@ -12,10 +13,14 @@ class BorderConv:
                 name, tf.shape(initial), initial.dtype, wrapped, **added)
         return wrapper
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, activation=None, **kwargs):
         super().__init__(*args, **kwargs)
         assert self.padding == "same" and all(
             i == 1 for i in self.dilation_rate)
+        self._activation = tf.keras.activations.get(activation)
+        if self._activation is None:
+            self._activation = lambda x: x
+
         self.small = bool(tf.reduce_all(self.kernel_size == tf.constant(1)))
         if self.small:
             return
@@ -38,15 +43,15 @@ class BorderConv:
     def call(self, inputs):
         res = super().call(inputs)
         if self.small:
-            return res
+            return self._activation(res)
 
         weight, bias = self._build(tf.shape(inputs))
-        return weight * res + bias
+        return self._activation(weight * res + bias)
 
 class Conv1D(BorderConv, tf.keras.layers.Conv1D):
     pass
 
-class Conv2D(BorderConv, tf.keras.layers.Conv2D):
+class Conv2D(BorderConv, SpecializedConv2D):
     pass
 
 class Conv3D(BorderConv, tf.keras.layers.Conv3D):
