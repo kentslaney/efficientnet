@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
 from train import RandAugmentTrainer, TFDSTrainer
-from utils import RequiredLength
+from cli.utils import RequiredLength
 from functools import partial
 from border.layers import Conv2D
 

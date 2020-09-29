@@ -1,9 +1,11 @@
-import os
+import os, sys
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+# hack to get gcloud deployment to line up with normal CLI calls
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir))
 
-from utils import cli_call
-import data
-import train
+from cli.utils import cli_call
+from cli import data, train
 
 def cli(parser):
     subparsers = parser.add_subparsers()
@@ -12,6 +14,7 @@ def cli(parser):
         "Preview an augmented dataset")))
     data.download_cli(subparsers.add_parser("download", help=(
         "Download a dataset")))
-    return parser
+    parser.set_defaults(call=lambda: parser.parse_args(["-h"]))
 
-cli_call(cli)
+if __name__ == "__main__":
+    cli_call(cli)

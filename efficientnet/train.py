@@ -2,7 +2,8 @@ import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
 from .efficientnet import Classifier
 from train import RandAugmentTrainer, TFDSTrainer
-from utils import RequiredLength, TPUBatchNormalization
+from cli.utils import RequiredLength
+from utils import TPUBatchNormalization
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),

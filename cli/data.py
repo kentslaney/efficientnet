@@ -1,13 +1,14 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from preprocessing.augment import RandAugmentCropped, RandAugmentPadded
-from train import TFDSTrainer
 
 def download(dataset, data_dir):
+    from train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     tfds.load(dataset, split="train", data_dir=data_dir)
 
 def main(dataset, pad, augment, data_dir):
+    from train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     data, info = tfds.load(dataset, split="train", data_dir=data_dir,
                            with_info=True, shuffle_files=True)
@@ -32,6 +33,7 @@ def preview_cli(parser):
 
 def download_cli(parser):
     parser.add_argument("dataset", help="choose a TFDS dataset to download")
+    parser.add_argument("--job-dir", dest="data_dir")
     data_cli(parser)
     parser.set_defaults(call=download)
 
@@ -48,5 +50,5 @@ def data_cli(parser):
         "default directory for TFDS data, supports GCS buckets"))
 
 if __name__ == "__main__":
-    from utils import cli_call
+    from cli.utils import cli_call
     cli_call(preview_cli)
