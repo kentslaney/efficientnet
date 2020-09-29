@@ -48,7 +48,3 @@ def augment_cli(parser):
 def data_cli(parser):
     parser.add_argument("--data-dir", default=None, help=(
         "default directory for TFDS data, supports GCS buckets"))
-
-if __name__ == "__main__":
-    from cli.utils import cli_call
-    cli_call(preview_cli)

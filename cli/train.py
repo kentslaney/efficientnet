@@ -1,5 +1,5 @@
 import tensorflow as tf
-import importlib, argparse
+import importlib, os
 from cli.utils import relpath, NoStrategy, PresetFlag, HelpFormatter, ExtendCLI
 
 def cli_strategy(distribute):
@@ -81,9 +81,8 @@ def cli(parser):
         "--no-base", action="store_const", const=None, dest="base", help=(
             "prevents saving checkpoints or tensorboard logs to disk"))
     group.add_argument(
-        "--job-dir", "--base", metavar="PATH",
-        default=relpath(os.pardir, "jobs"), help=(
-            "prefix for training directory"))
+        "--job-dir", dest="base", metavar="PATH", default=relpath("jobs"),
+        help="prefix for training directory")
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
@@ -105,7 +104,3 @@ def cli(parser):
             "--distribute MirroredStrategy [DEVICE...]"))
 
     parser.set_defaults(call=main)
-
-if __name__ == "__main__":
-    from cli.utils import cli_call
-    cli_call(cli)
