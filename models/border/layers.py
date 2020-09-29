@@ -1,6 +1,6 @@
 import tensorflow as tf
 from .border import BorderOffset, BorderReweight
-from utils import Conv2D as SpecializedConv2D
+from models.utils import Conv2D as SpecializedConv2D
 
 class BorderConv:
     def register(self, kernel=False):

@@ -21,7 +21,7 @@ def cli_strategy(distribute):
     return distribute, tpu
 
 def model_cli(parser, model):
-    module = importlib.import_module(model + ".train")
+    module = importlib.import_module("models." + model + ".train")
     trainer = module.Trainer
     trainer.cli(parser)
     return trainer

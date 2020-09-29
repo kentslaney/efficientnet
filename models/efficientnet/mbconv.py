@@ -1,6 +1,6 @@
 import tensorflow as tf
 from functools import partial
-from utils import Conv2D
+from models.utils import Conv2D
 
 displace = lambda f: lambda _, *args, **kwargs: f(*args, **kwargs)
 

@@ -1,12 +1,12 @@
-from cli.remote import platforms, remote_action
+from cli.remote import platforms, actions
 from cli.utils import relpath
 import subprocess, tempfile, os, shlex
 
-def ssh(destination, action, argv):
+def ssh(destination, action):
     destination, path = destination.split(":", 1) if ":" in destination \
         else (destination, os.path.basename(relpath()))
     qualified = f"{destination}:{path}"
-    cmd = action + " " + " ".join(map(shlex.quote, argv))
+    cmd = " ".join(map(shlex.quote, action))
     with tempfile.TemporaryDirectory() as base:
         ctl = os.path.join(base, "ctl")
         rsync = ["rsync", "-e", f"ssh -S {shlex.quote(ctl)}", "--copy-links",
@@ -27,7 +27,7 @@ def cli(parser):
         "remote ip or hostname (accepts ~/.ssh/config aliases), optionally "
         "followed by a colon and the path on the remote machine relative to "
         "the user's home directory where the model should be stored"))
-    parser.add_argument("action", action=remote_action)
+    parser.add_argument("action", **actions)
     parser.set_defaults(call=ssh)
 
 platforms["ssh"] = cli

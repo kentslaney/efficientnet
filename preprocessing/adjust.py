@@ -1,7 +1,7 @@
 import tensorflow as tf
 from .base import Augmentation, normalize, Convert01, Group, Reformat
 from functools import partial
-from border.border import BorderReweight
+from models.border.border import BorderReweight
 
 class Blended(Augmentation):
     def caller(self, cls, im, *args, **kwargs):

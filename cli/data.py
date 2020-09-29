@@ -3,7 +3,7 @@ import tensorflow_datasets as tfds
 from preprocessing.augment import RandAugmentCropped, RandAugmentPadded
 
 def download(dataset, data_dir):
-    from train import TFDSTrainer
+    from models.train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     tfds.load(dataset, split="train", data_dir=data_dir)
 
