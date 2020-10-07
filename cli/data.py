@@ -1,14 +1,16 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from preprocessing.augment import RandAugmentCropped, RandAugmentPadded
+from cli.utils import strftime
+import os.path
 
 def download(dataset, data_dir):
     from models.train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     tfds.load(dataset, split="train", data_dir=data_dir)
 
-def main(dataset, pad, augment, data_dir):
-    from train import TFDSTrainer
+def main(dataset, pad, augment, data_dir, job_dir, fname):
+    from models.train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     data, info = tfds.load(dataset, split="train", data_dir=data_dir,
                            with_info=True, shuffle_files=True)
@@ -20,13 +22,23 @@ def main(dataset, pad, augment, data_dir):
             aug(x["image"]) / 5 + 0.5, 0., 1.)})
 
     fig = tfds.show_examples(data, info)
-    fig.show()
+    if job_dir is not None:
+        formatted = fname.format(time=strftime())
+        path = os.path.join(job_dir, formatted)
+        if formatted != fname:
+            print(f"saving figure to {path}")
+        with tf.io.gfile.GFile(path, "wb") as fp:
+            fig.savefig(fp)
 
 def preview_cli(parser):
     parser.add_argument(
         "dataset", nargs="?", default="imagenette/320px-v2", help=(
             'choose a TFDS dataset to augment, must have "image" key and '
             'a "train" split'))
+    parser.add_argument("--job-dir", default=None, help=(
+        "directory to write the output image to"))
+    parser.add_argument("--fname", default="{time}.png", help=(
+        "output file name"))
 
     augment_cli(parser)
     parser.set_defaults(call=main)

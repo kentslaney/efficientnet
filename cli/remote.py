@@ -1,7 +1,7 @@
 from cli.utils import helper, ExtendCLI, relpath
 import argparse, importlib, os
 
-actions = {"choices": {"train", "download"}, "nargs": "..."}
+actions = {"choices": {"train", "download", "preview"}, "nargs": "..."}
 platforms = {}
 
 def cli(parser):

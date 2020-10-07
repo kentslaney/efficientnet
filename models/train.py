@@ -117,9 +117,11 @@ class TFDSTrainer(Trainer):
         key = "dd31405981ef5f776aa17412e1f0c112"
         url_base = f"http://image-net.org/challenges/LSVRC/2012/{key}/"
         files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
-        downloader.download([tfds.download.Resource(
-            url=url_base + fname, path=os.path.join(data_base, fname))
-                for fname in files])
+        paths = [tfds.download.Resource(path=os.path.join(
+            data_base, fname), url=url_base + fname) for fname in files]
+        paths = [path for path in paths if not tf.io.gfile.exists(path.path)]
+        if paths:
+            downloader.download(paths)
 
     @classmethod
     def builder(cls, dataset, data_dir):

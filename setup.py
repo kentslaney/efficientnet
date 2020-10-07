@@ -7,6 +7,7 @@ REQUIRED_PACKAGES = [
     "tensorflow-addons>=0.11",
     "tensorflow-datasets>=3.2.1",
     "tensorflow-probability>=0.11.0",
+    "matplotlib>=3.2.1"
 ]
 
 setup(
