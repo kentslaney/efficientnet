@@ -1,13 +1,29 @@
 import os
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from cli.utils import strftime
 from cli.data import augment_cli
 from models.utils import tpu_prep
 from preprocessing.augment import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded)
 
+class WarmedExponential(tf.keras.callbacks.Callback):
+    def __init__(self, scale, units, warmup, decay, freq=32, log=32):
+        self.scale, self.units, self.warmup, self.decay, self.freq, \
+            self.log = scale, units, warmup, decay, freq, log
+
+    def on_train_batch_begin(self, batch, logs):
+        if not batch % self.freq:
+            x = batch / self.units
+            lr = self.scale * x / self.warmup if x < self.warmup else \
+                self.scale * self.decay ** (x - self.warmup)
+            self.model.optimizer.lr.assign(lr)
+
+            if self.log and not (batch // self.freq) % self.log:
+                tf.summary.scalar('learning rate', data=lr, step=batch)
+
 class Trainer:
-    _base, _format, checkpoint = None, None, None
+    _path, _format, checkpoint = None, None, None
     mapper = lambda _, f: lambda x, *y: (f(x),) + y
     opt = tf.keras.optimizers.Adam
 
@@ -16,15 +32,15 @@ class Trainer:
         self.callbacks = []
 
     @property
-    def base(value):
-        return self._base
+    def path(value):
+        return self._path
 
-    @base.setter
-    def base(self, value):
-        base, name = value
+    @path.setter
+    def path(self, value):
+        path, name = value
         formatted = name.format(time=strftime())
-        self._base = base = os.path.join(os.path.abspath(value), formatted)
-        ckpts, logs = os.path.join(base, "ckpts"), os.path.join(base, "logs")
+        self._path = path = os.path.join(os.path.abspath(path), formatted)
+        ckpts, logs = os.path.join(path, "ckpts"), os.path.join(path, "logs")
         os.makedirs(ckpts, exist_ok=True)
         tb_manual_metrics = tf.summary.create_file_writer(
             os.path.join(logs, "metrics"))
@@ -35,7 +51,7 @@ class Trainer:
         if prev is not None:
             self.checkpoint = prev
         elif formatted != name:
-            print(f'Writing to training directory {formatted}')
+            print(f'Writing to training directory {path}')
 
         self.callbacks += [
             tf.keras.callbacks.TensorBoard(logs, update_freq=64),
@@ -55,14 +71,8 @@ class Trainer:
         self._format = value
 
     def decay(self):
-        warmup, schedule = 5, tf.keras.optimizers.schedules.ExponentialDecay(
-            self.learning_rate, 2.4, 0.97, True)
-        def logger(epoch):
-            lr = schedule(epoch) if epoch < warmup else epoch / warmup
-            tf.summary.scalar('learning rate', data=lr, step=epoch)
-            return lr
-
-        self.callbacks.append(tf.keras.callbacks.LearningRateScheduler(logger))
+        self.callbacks.append(WarmedExponential(
+            self.learning_rate, self.decay_unit / self.batch, 2, 0.97))
 
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
@@ -79,7 +89,7 @@ class Trainer:
         if self.tpu:
             train, validation = map(tpu_prep, (train, validation))
 
-        self.dataset = self.dataset.shuffle(1000).map(
+        self.dataset = self.dataset.shuffle(2048).map(
             self.mapper(train), tune).batch(
                 self.batch, True).prefetch(tune).with_options(options)
 
@@ -101,10 +111,12 @@ class Trainer:
 
     @classmethod
     def cli(cls, parser):
-        pass
+        parser.add_argument("--decay-unit", type=float, default=3e6, help=(
+            "base units for the learning rate in number of examples, warms up "
+            "2 units, decays 0.97"))
 
-    def build(self, **kwargs):
-        pass
+    def build(self, decay_unit, **kwargs):
+        self.decay_unit = decay_unit
 
 class TFDSTrainer(Trainer):
     @classmethod

@@ -3,12 +3,13 @@ from tensorflow_addons.optimizers import MovingAverage
 from models.train import RandAugmentTrainer, TFDSTrainer
 from cli.utils import RequiredLength
 from functools import partial
-from models.border.layers import Conv2D
+from models.border.layers import Conv2D as BorderConv2D
+from models.utils import Conv2D
 
 tf.config.optimizer.set_jit(True)
 
 class Model(tf.keras.Model):
-    conv = tf.keras.layers.Conv2D
+    conv = Conv2D
 
     def __init__(self, outputs, data_format):
         super().__init__()
@@ -35,7 +36,7 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
         self.mapper = lambda f: lambda x, y: (
             f(x), tf.one_hot(y, self.outputs))
         if border_conv:
-            Model.conv = Conv2D
+            Model.conv = BorderConv2D
         self.model = Model(self.outputs, self.data_format)
         self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
                      ["categorical_accuracy"])

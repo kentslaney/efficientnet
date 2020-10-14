@@ -183,5 +183,5 @@ class Reformat(Augmentation):
         self.channels_last = data_format == "channels_last"
 
     def call(self, im):
-        im = im if self.channels_last else tf.transpose(im, [2, 0, 1])
-        return (im - self.mean) / self.norm
+        im = (im - self.mean) / self.norm
+        return im if self.channels_last else tf.transpose(im, [2, 0, 1])

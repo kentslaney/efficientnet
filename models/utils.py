@@ -31,11 +31,11 @@ class TPUBatchNormalization(tf.keras.layers.BatchNormalization):
 
 class Conv2D(tf.keras.layers.Conv2D):
     def call(self, inputs):
-        shape = tf.shape(inputs)
         single_inference = self.data_format == "channels_first" and \
-            shape[0] == 1 and self.kernel_size == (1, 1)
+            inputs.shape[0] == 1 and self.kernel_size == (1, 1)
         if not single_inference:
             return super().call(inputs)
+        shape = tf.shape(inputs)
         flat = tf.reshape(inputs, [shape[1], -1])
         scaled = tf.transpose(tf.squeeze(self.kernel, (2, 3))) @ flat
         target = tf.concat(((1, self.filters), shape[2:]), 0)

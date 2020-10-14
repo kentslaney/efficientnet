@@ -32,7 +32,7 @@ def main(model, base, data_format, batch, distribute, epochs, decay, suffix,
     model.distribute(*cli_strategy(distribute))
     model.data_format = data_format
     if base is not None:
-        model.base = base, suffix
+        model.path = base, suffix
 
     model.build(**kwargs)
     if decay:
@@ -80,9 +80,9 @@ def cli(parser):
     group.add_argument(
         "--no-base", action="store_const", const=None, dest="base", help=(
             "prevents saving checkpoints or tensorboard logs to disk"))
-    group.add_argument(
-        "--job-dir", dest="base", metavar="PATH", default=relpath("jobs"),
-        help="prefix for training directory")
+    group.add_argument("--job-dir", dest="base", metavar="PATH", help=(
+        "prefix for training directory"))
+    parser.set_defaults(base=relpath("jobs"))
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(

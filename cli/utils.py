@@ -2,27 +2,17 @@ import argparse, os
 from functools import partial, wraps
 from datetime import datetime
 
-def HelpFormatter(parser=None):
-    class HelpFormatter(argparse.HelpFormatter):
-        def __init__(self, *args, **kwargs):
-            if hasattr(parser, "_group"):
-                group, parser._group = parser._group, None
-                while group is not None:
-                    parser._add_container_actions(group)
-                    group = group._group
-            super().__init__(*args, **kwargs)
-
-        def _format_args(self, action, default_metavar):
-            if hasattr(action, "format_meta"):
-                return action.format_meta(self._metavar_formatter(
-                    action, default_metavar))
-            else:
-                return super()._format_args(action, default_metavar)
-    return HelpFormatter
+class HelpFormatter(argparse.HelpFormatter):
+    def _format_args(self, action, default_metavar):
+        if hasattr(action, "format_meta"):
+            return action.format_meta(self._metavar_formatter(
+                action, default_metavar))
+        else:
+            return super()._format_args(action, default_metavar)
 
 class ArgumentParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
-        kwargs = {"formatter_class": HelpFormatter(self), **kwargs}
+        kwargs = {"formatter_class": HelpFormatter, **kwargs}
         super().__init__(*args, **kwargs)
         kwargs["add_help"] = False
         self._group, self.copy = None, lambda: self.__class__(*args, **kwargs)
