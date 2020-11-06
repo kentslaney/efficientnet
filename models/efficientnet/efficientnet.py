@@ -49,9 +49,12 @@ class Embedding(tf.keras.Model):
             block.repeats = self.round_repeats(block.repeats)
         __class__._build(self)
 
-    def kwargs(self, i):
-        return {"dropout": self.dropout * i / self.total,
-                "data_format": self.data_format}
+    def kwargs(self, overall, repeat):
+        return {
+            **({"strides": 1} if repeat else {}),
+            "dropout": self.dropout * overall / self.total,
+            "data_format": self.data_format,
+        }
 
     def round_filters(self, filters):
         filters *= self.width
@@ -72,8 +75,9 @@ class Embedding(tf.keras.Model):
 
         self._blocks, i = [], 0
         for block in self.blocks:
-            for _ in range(block.repeats):
-                self._blocks.append(self.base(**block, **self.kwargs(i)))
+            for j in range(block.repeats):
+                self._blocks.append(self.base(**{
+                    **block, **self.kwargs(i, j)}))
                 i += 1
 
     def call(self, inputs, training):

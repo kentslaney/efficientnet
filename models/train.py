@@ -8,19 +8,24 @@ from preprocessing.augment import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded)
 
 class WarmedExponential(tf.keras.callbacks.Callback):
-    def __init__(self, scale, units, warmup, decay, freq=32, log=32):
-        self.scale, self.units, self.warmup, self.decay, self.freq, \
-            self.log = scale, units, warmup, decay, freq, log
+    def __init__(self, scale, units, warmup, decay, freq=64):
+        self.scale, self.units, self.warmup, self.decay, self.freq = scale, \
+            units, warmup, decay, freq
+        self.step = tf.Variable(0, tf.int32)
 
-    def on_train_batch_begin(self, batch, logs):
-        if not batch % self.freq:
-            x = batch / self.units
+    def on_train_batch_begin(self, batch, logs=None):
+        self.step.assign_add(1)
+        if self.step % self.freq == 1:
+            x = tf.cast(self.step, tf.float32) / self.units
             lr = self.scale * x / self.warmup if x < self.warmup else \
                 self.scale * self.decay ** (x - self.warmup)
             self.model.optimizer.lr.assign(lr)
 
-            if self.log and not (batch // self.freq) % self.log:
-                tf.summary.scalar('learning rate', data=lr, step=batch)
+class LRTensorBoard(tf.keras.callbacks.TensorBoard):
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        logs.update({'learning_rate': self.model.optimizer.lr})
+        super().on_epoch_end(epoch, logs)
 
 class Trainer:
     _path, _format, checkpoint = None, None, None
@@ -39,12 +44,9 @@ class Trainer:
     def path(self, value):
         path, name = value
         formatted = name.format(time=strftime())
-        self._path = path = os.path.join(os.path.abspath(path), formatted)
+        self._path = path = os.path.join(path, formatted)
         ckpts, logs = os.path.join(path, "ckpts"), os.path.join(path, "logs")
         os.makedirs(ckpts, exist_ok=True)
-        tb_manual_metrics = tf.summary.create_file_writer(
-            os.path.join(logs, "metrics"))
-        tb_manual_metrics.set_as_default()
 
         prev = ((i.stat().st_ctime, i.path) for i in os.scandir(ckpts))
         prev = max(prev, default=(None, None))[1]
@@ -54,7 +56,7 @@ class Trainer:
             print(f'Writing to training directory {path}')
 
         self.callbacks += [
-            tf.keras.callbacks.TensorBoard(logs, update_freq=64),
+            LRTensorBoard(logs, update_freq=64),
             tf.keras.callbacks.ModelCheckpoint(
                 os.path.join(ckpts, "ckpt_{epoch}"))]
 
@@ -72,7 +74,7 @@ class Trainer:
 
     def decay(self):
         self.callbacks.append(WarmedExponential(
-            self.learning_rate, self.decay_unit / self.batch, 2, 0.97))
+            self.learning_rate, self.decay_unit / self.batch, 1, 0.97))
 
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
@@ -90,13 +92,13 @@ class Trainer:
             train, validation = map(tpu_prep, (train, validation))
 
         self.dataset = self.dataset.shuffle(2048).map(
-            self.mapper(train), tune).batch(
-                self.batch, True).prefetch(tune).with_options(options)
+            self.mapper(train), tune).batch(self.batch, True).prefetch(
+                tune).with_options(options)
 
         if validation is not None and self.validation is not None:
-            self.validation = self.validation.map(
-                self.mapper(validation), tune).batch(
-                    self.batch, True).prefetch(tune).with_options(options)
+            self.validation = self.validation.map(self.mapper(
+                validation), tune).batch(self.batch, True).prefetch(
+                    tune).with_options(options)
 
     def compile(self, *args, **kwargs):
         self.model.compile(self.opt, *args, **kwargs)
@@ -113,7 +115,7 @@ class Trainer:
     def cli(cls, parser):
         parser.add_argument("--decay-unit", type=float, default=3e6, help=(
             "base units for the learning rate in number of examples, warms up "
-            "2 units, decays 0.97"))
+            "1 unit, decays 0.97"))
 
     def build(self, decay_unit, **kwargs):
         self.decay_unit = decay_unit
@@ -161,10 +163,6 @@ class TFDSTrainer(Trainer):
         parser.add_argument("--dataset", default="imagenette/320px-v2", help=(
             "choose which TFDS dataset to train on; must be classification "
             "and support as_supervised"))
-        parser.add_argument(
-            "--size", metavar="N", type=int, default=None, help=(
-                "force the input image to be a certain size, will default to "
-                "the recommended size for the preset if unset"))
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument("--train-all", dest="holdout", action="store_false",

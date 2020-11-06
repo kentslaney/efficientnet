@@ -9,15 +9,16 @@ def download(dataset, data_dir):
     TFDSTrainer.builder(dataset, data_dir)
     tfds.load(dataset, split="train", data_dir=data_dir)
 
-def main(dataset, pad, augment, data_dir, job_dir, fname):
+def main(dataset, pad, augment, data_dir, job_dir, fname, size):
     from models.train import TFDSTrainer
     TFDSTrainer.builder(dataset, data_dir)
     data, info = tfds.load(dataset, split="train", data_dir=data_dir,
                            with_info=True, shuffle_files=True)
 
     if augment:
+        size = size or 224
         aug = RandAugmentPadded if pad else RandAugmentCropped
-        aug = aug((224, 224), data_format="channels_last")
+        aug = aug((size, size), data_format="channels_last")
         data = data.map(lambda x: {**x, "image": tf.clip_by_value(
             aug(x["image"]) / 5 + 0.5, 0., 1.)})
 
@@ -55,6 +56,9 @@ def augment_cli(parser):
         "pads the augmented images instead of cropping them"))
     group.add_argument("--no-augment", dest="augment", action="store_false",
                         help="don't augment the input")
+    parser.add_argument("--size", metavar="N", type=int, default=None, help=(
+        "force the input image to be a certain size, will default to the "
+        "recommended size for the preset if unset"))
     data_cli(parser)
 
 def data_cli(parser):

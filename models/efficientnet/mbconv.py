@@ -31,8 +31,6 @@ class MBConv(tf.keras.layers.Layer):
         self.depthwise = partial(self.depthwise, data_format=data_format,
                                  depthwise_initializer=self.initialization,
                                  padding='same')
-        self.drop = self.drop(self.dropout, noise_shape=(None, 1, 1, 1)) \
-            if self.dropout > 0 else lambda x: x
 
     def pool(self, inputs):
         return tf.reduce_mean(inputs, self.spacial, True)
@@ -58,6 +56,8 @@ class MBConv(tf.keras.layers.Layer):
 
         self._project_conv = self.conv(self.outputs, 1, use_bias=False)
         self._project_bn = self.bn()
+        self.drop = self.drop(self.dropout, noise_shape=(
+            input_shape[0], 1, 1, 1)) if self.dropout > 0 else lambda x, *y: x
 
     def call(self, inputs, training=False):
         x = inputs
@@ -80,7 +80,7 @@ class MBConv(tf.keras.layers.Layer):
         return x
 
     def get_config(self):
-        config = super(Linear, self).get_config()
+        config = super().get_config()
         keys = ("size", "outputs", "expand", "residuals", "strides",
                 "se_ratio", "dropout", "data_format")
         config.update({i: getattr(self, i) for i in keys})

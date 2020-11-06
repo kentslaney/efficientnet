@@ -31,8 +31,9 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
     opt = lambda _, lr: MovingAverage(
         tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
-    def build(self, border_conv, **kwargs):
-        super().build(**kwargs)
+    def build(self, border_conv, size=None, **kwargs):
+        size = 64 if size is None else size
+        super().build(size=size, **kwargs)
         self.mapper = lambda f: lambda x, y: (
             f(x), tf.one_hot(y, self.outputs))
         if border_conv:
