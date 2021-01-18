@@ -7,7 +7,7 @@ REQUIRED_PACKAGES = [
     "tensorflow-addons>=0.11",
     "tensorflow-datasets>=3.2.1",
     "tensorflow-probability>=0.11.0",
-    "matplotlib>=3.2.1"
+    "matplotlib>=3.2.1",
 ]
 
 setup(
@@ -16,5 +16,5 @@ setup(
     install_requires=REQUIRED_PACKAGES,
     packages=find_packages(),
     include_package_data=True,
-    description='train models'
+    description='train models',
 )

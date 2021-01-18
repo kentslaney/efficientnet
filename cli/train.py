@@ -50,7 +50,7 @@ def cli(parser):
             "python's string formatting; time is the only currently supported "
             "variable"))
     parser.add_argument(
-        "--batch", metavar="SIZE", type=int, default=128, help=(
+        "--batch", metavar="SIZE", type=int, default=64, help=(
             "batch size per visible device (1 unless distributed)"))
     parser.add_argument("--epochs", metavar="N", type=int, default=1000, help=(
         "how many epochs to run"))
