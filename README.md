@@ -1,6 +1,6 @@
-# Border Correction
-Standard convolutions do a poor job of accounting for partially out of bounds kernels. Techniques like mirroring, smearing the edges, or simple padding all give the network inputs that could be a part of the real image, whereas, in many cases, the edge of the image requires distinct logic to parse. Zero padding allows for the closest approximation of separate logic for the edges, because fast transitions to black are uncommon in real images, but still forces the network to do some awkward training around it.
+# EfficientNet
+This repo provides a clean implementation of EfficientNet. Well, this repo *will* provide a clean implementation of EfficientNet. Right now it just provides a really convoluted implementation of a 3 layer CNN.
 
-While this may seem like a small effect given it only impacts one row/column in a 3x3 convolution, the problem compounds for the higher layers in deeper networks. Mirroring and smearing can have unpredictable results in an embedded space. Worse, fast transitions to zero are more common post-activation due to the wide spread use of ReLUs, forcing all the embedded spaces to have zero correspond to the out of bounds default.
-
-Instead, this repo creates a small set of trainable weights that rescale and change the offset of kernels that go over the edge of the image. These weights are on a per channel basis, allowing for different default responses to edge cases by different channels. For an `n` by `n` by `c` kernel, this process only takes `2 * c * (n - 1)` parameters. Adding this to ResNet-152, a 60M parameter model, would add 50k parameters, or less than 0.1%.
+## TODO
+- Train CFAIR-10 to better than 11% accuracy
+- The help formatter is broken somehow but I don't remember the specifics
