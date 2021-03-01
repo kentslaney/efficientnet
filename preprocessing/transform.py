@@ -29,7 +29,8 @@ class ApplyTransform(Blended):
     def call(self, im):
         im = tf.concat((im, tf.ones(tf.shape(im)[:-1])[..., tf.newaxis]), -1)
         flat = tf.reshape(self._transform, (-1,))
-        im = transform(im, flat[:-1] / flat[-1], "BILINEAR", self.output(im))
+        im = transform(
+            im, flat[:-1] / flat[-1], "BILINEAR", output_shape=self.output(im))
 
         self._output, self._transform = __class__._output, __class__._transform
         return im[..., -1:], self.replace, im[..., :-1]
