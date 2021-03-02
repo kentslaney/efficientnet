@@ -2,16 +2,16 @@ import tensorflow as tf
 from functools import partial
 from models.utils import Conv2D
 
-displace = lambda f: lambda _, *args, **kwargs: f(*args, **kwargs)
-
 class MBConv(tf.keras.layers.Layer):
     conv = Conv2D
     depthwise = tf.keras.layers.DepthwiseConv2D
     bn = tf.keras.layers.BatchNormalization
-    activation = displace(tf.nn.swish)
     initialization = tf.keras.initializers.VarianceScaling(
         scale=2.0, mode='fan_out', distribution='untruncated_normal')
     drop = tf.keras.layers.Dropout
+
+    def activation(self, *args, **kwargs):
+        return tf.nn.swish(*args, **kwargs)
 
     def __init__(self, size=3, outputs=32, expand=6, residuals=True, strides=1,
                  se_ratio=0.25, dropout=0, data_format='channels_first', **kw):
