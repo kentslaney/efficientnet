@@ -16,7 +16,7 @@ class WarmedExponential(tf.keras.callbacks.Callback):
     def on_train_batch_begin(self, batch, logs=None):
         self.step.assign_add(1)
         if self.step % self.freq == 1:
-            x = tf.cast(self.step + self.freq / 2, tf.float32) / self.units
+            x = (tf.cast(self.step, tf.float32) + self.freq / 2) / self.units
             lr = self.scale * x / self.warmup if x < self.warmup else \
                 self.scale * self.decay ** (x - self.warmup)
             self.model.optimizer.lr.assign(lr)
