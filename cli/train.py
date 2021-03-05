@@ -1,6 +1,7 @@
 import tensorflow as tf
 import importlib, os
-from cli.utils import relpath, NoStrategy, PresetFlag, HelpFormatter, ExtendCLI
+from glob import iglob
+from cli.utils import relpath, NoStrategy, PresetFlag, HelpFormatter, helper
 
 def cli_strategy(distribute):
     distribute, *devices = distribute or [None]
@@ -20,12 +21,6 @@ def cli_strategy(distribute):
 
     return distribute, tpu
 
-def model_cli(parser, model):
-    module = importlib.import_module("models." + model + ".train")
-    trainer = module.Trainer
-    trainer.cli(parser)
-    return trainer
-
 def main(model, base, data_format, batch, distribute, epochs, decay, suffix,
          learning_rate, **kwargs):
     model = model(batch, learning_rate)
@@ -42,9 +37,17 @@ def main(model, base, data_format, batch, distribute, epochs, decay, suffix,
     model.fit(epochs)
 
 def cli(parser):
-    parser.add_argument("model", action=ExtendCLI(model_cli), help=(
-            "select the model that you want to train based on the path "
-            "relative to the base directory"))
+    subparsers = parser.add_subparsers()
+    for model in [os.path.normpath(i).rsplit(os.path.sep, 2)[1] for i in iglob(
+            relpath("models", "*", "train.py"))]:
+        subparser = subparsers.add_parser(model)
+        trainer = importlib.import_module(f"models.{model}.train").Trainer
+        subparser.set_defaults(model=trainer, call=main)
+        subcli(subparser)
+        trainer.cli(subparser)
+    parser.set_defaults(call=helper(parser))
+
+def subcli(parser):
     parser.add_argument("--id", dest="suffix", default="{time}", help=(
             "name template for the training directory, compiled using "
             "python's string formatting; time is the only currently supported "

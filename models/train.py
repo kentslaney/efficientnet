@@ -8,7 +8,7 @@ from preprocessing.augment import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded)
 
 class WarmedExponential(tf.keras.callbacks.Callback):
-    def __init__(self, scale, units, warmup, decay, freq=64):
+    def __init__(self, scale, units, warmup, decay, freq=256):
         self.scale, self.units, self.warmup, self.decay, self.freq = scale, \
             units, warmup, decay, freq
         self.step = tf.Variable(0, tf.int32)
@@ -16,7 +16,7 @@ class WarmedExponential(tf.keras.callbacks.Callback):
     def on_train_batch_begin(self, batch, logs=None):
         self.step.assign_add(1)
         if self.step % self.freq == 1:
-            x = tf.cast(self.step, tf.float32) / self.units
+            x = tf.cast(self.step + self.freq / 2, tf.float32) / self.units
             lr = self.scale * x / self.warmup if x < self.warmup else \
                 self.scale * self.decay ** (x - self.warmup)
             self.model.optimizer.lr.assign(lr)
@@ -28,7 +28,7 @@ class LRTensorBoard(tf.keras.callbacks.TensorBoard):
         super().on_epoch_end(epoch, logs)
 
 class Trainer:
-    _path, _format, checkpoint = None, None, None
+    _path, _format, checkpoint, length = None, None, None, None
     mapper = lambda _, f: lambda x, *y: (f(x),) + y
     opt = tf.keras.optimizers.Adam
 
@@ -73,8 +73,10 @@ class Trainer:
         self._format = value
 
     def decay(self):
+        assert self.length is not None
         self.callbacks.append(WarmedExponential(
-            self.learning_rate, self.decay_unit / self.batch, 1, 0.97))
+            self.learning_rate, self.length / self.batch, self.decay_warmup,
+            self.decay_factor))
 
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
@@ -107,18 +109,19 @@ class Trainer:
         if self.checkpoint is not None:
             self.model.load_weights(self.checkpoint)
 
-        self.model.fit(self.dataset, validation_data=self.validation,
-                       callbacks=self.callbacks, batch_size=self.batch,
-                       epochs=epochs)
+        self.model.fit(
+            self.dataset, validation_data=self.validation,
+            callbacks=self.callbacks, batch_size=self.batch, epochs=epochs)
 
     @classmethod
     def cli(cls, parser):
-        parser.add_argument("--decay-unit", type=float, default=3e6, help=(
-            "base units for the learning rate in number of examples, warms up "
-            "1 unit, decays 0.97"))
+        parser.add_argument("--decay-warmup", type=int, default=5, help=(
+            "number of epochs to warm up learning rate"))
+        parser.add_argument("--decay-factor", type=float, default=0.99, help=(
+            "lr decay per epoch after warmup"))
 
-    def build(self, decay_unit, **kwargs):
-        self.decay_unit = decay_unit
+    def build(self, decay_warmup, decay_factor, **kwargs):
+        self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
 
 class TFDSTrainer(Trainer):
     @classmethod
@@ -146,16 +149,18 @@ class TFDSTrainer(Trainer):
         self.builder(dataset, data_dir)
         data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
                                shuffle_files=True, as_supervised=True)
-        data = [i[1] for i in sorted(
-            data.items(), key=lambda x: -info.splits[x[0]].num_examples)]
+        sizes, _, data = zip(*sorted([
+            (info.splits[k].num_examples, i, v) for i, (k, v) in enumerate(
+                data.items())], reverse=True))
 
         hold = -1 if holdout is False else -2
         for i in data[:hold]:
             data[hold] = data[hold].concatenate(i)
-        data = data[hold:] if len(data) > abs(hold) - 1 else (data, None)
+        data = data[hold:] if len(data) >= -hold else (data, None)
         data = (data[0], None) if holdout is True else data
         self.dataset, self.validation = data
         self.outputs = info.features["label"].num_classes
+        self.length = sum(sizes[:len(sizes) + hold + 1])
         super().build(**kwargs)
 
     @classmethod

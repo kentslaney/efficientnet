@@ -76,12 +76,6 @@ def PresetFlag(*preset):
             setattr(namespace, self.dest, list(preset) + values)
     return PresetFlag
 
-def ExtendCLI(f):
-    class ExtendCLI(argparse.Action):
-        def __call__(self, parser, namespace, value, option_string=None):
-            setattr(namespace, self.dest, f(parser.group, value))
-    return ExtendCLI
-
 strftime = lambda: datetime.today().strftime("%Y_%m_%d_%H_%M_%S")
 helper = lambda parser: lambda: parser.parse_args(["-h"])
 

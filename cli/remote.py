@@ -1,4 +1,4 @@
-from cli.utils import helper, ExtendCLI, relpath
+from cli.utils import helper, relpath
 import argparse, importlib, os
 
 actions = {"choices": {"train", "download", "preview"}, "nargs": "..."}
