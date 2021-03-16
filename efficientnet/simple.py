@@ -1,10 +1,10 @@
 import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
-from models.train import RandAugmentTrainer, TFDSTrainer
-from cli.utils import RequiredLength
 from functools import partial
-from models.border.layers import Conv2D as BorderConv2D
-from models.utils import Conv2D
+from base import RandAugmentTrainer, TFDSTrainer
+from utils import RequiredLength
+from border import Conv2D as BorderConv2D
+from utils import Conv2D, cli_builder
 
 tf.config.optimizer.set_jit(True)
 
@@ -31,11 +31,12 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
     opt = lambda _, lr: MovingAverage(
         tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
-    def build(self, border_conv, size=None, **kwargs):
-        size = 64 if size is None else size
-        super().build(size=size, **kwargs)
+    @cli_builder
+    def build(self, border_conv=False, size=64, **kwargs):
         self.mapper = lambda f: lambda x, y: (
             f(x), tf.one_hot(y, self.outputs))
+        super().build(size=size, **kwargs)
+
         if border_conv:
             Model.conv = BorderConv2D
         self.model = Model(self.outputs, self.data_format)

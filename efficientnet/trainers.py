@@ -1,9 +1,11 @@
 import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
-from .efficientnet import Classifier
-from models.train import RandAugmentTrainer, TFDSTrainer
-from cli.utils import RequiredLength
-from models.utils import TPUBatchNormalization
+from efficientnet import Classifier, Embedding
+from base import RandAugmentTrainer, TFDSTrainer
+from utils import TPUBatchNormalization, RequiredLength, cli_builder
+from border import Conv2D, DepthwiseConv2D
+from mbconv import MBConv
+import simple
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),
@@ -17,21 +19,21 @@ presets = [
     ("EfficientNet-L2", 800, 4.3, 5.3, 0.5),
 ]
 
-tf.config.optimizer.set_jit(True)
 
-class Trainer(RandAugmentTrainer, TFDSTrainer):
+class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
     base = Classifier
     opt = lambda _, lr: MovingAverage(
         tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
+    @cli_builder
     def build(self, size=None, preset=0, custom=None, name=None, **kwargs):
         if custom is None:
             _name, _size, *custom = presets[preset]
             size = _size if size is None else size
             name = _name if name is None else name
-        super().build(size=size, **kwargs)
         self.mapper = lambda f: lambda x, y: (
             f(x), tf.one_hot(y, self.outputs))
+        super().build(size=size, **kwargs)
 
         if self.tpu:
             self.base.base.bn = TPUBatchNorm
@@ -51,4 +53,23 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
             "--custom", type=float, default=None, action=RequiredLength(2, 5),
             metavar=("WIDTH", "DEPTH", "DROPOUT", "DIVISOR", "STEM"),
             help="use a custom initialization")
+        parser.add_argument("--name", help=(
+            "name to assign to the model; potentially useful to differentiate "
+            "exports"))
         super().cli(parser)
+
+class BorderMBConv(MBConv):
+    # depthwise = DepthwiseConv2D
+    conv = Conv2D
+
+class BorderClassifier(Classifier):
+    base = BorderMBConv
+
+class BorderTrainer(EfficientnetTrainer):
+    base = BorderClassifier
+
+cli_names = {
+    "base": EfficientnetTrainer,
+    "border": BorderTrainer,
+    "simple": simple.Trainer,
+}
