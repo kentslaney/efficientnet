@@ -5,7 +5,7 @@ from base import RandAugmentTrainer, TFDSTrainer
 from utils import TPUBatchNormalization, RequiredLength, cli_builder
 from border import Conv2D, DepthwiseConv2D
 from mbconv import MBConv
-import simple
+from simple import SimpleTrainer
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),
@@ -71,5 +71,5 @@ class BorderTrainer(EfficientnetTrainer):
 cli_names = {
     "base": EfficientnetTrainer,
     "border": BorderTrainer,
-    "simple": simple.Trainer,
+    "simple": SimpleTrainer,
 }

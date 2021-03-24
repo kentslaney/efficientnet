@@ -8,7 +8,7 @@ from utils import Conv2D, cli_builder
 
 tf.config.optimizer.set_jit(True)
 
-class Model(tf.keras.Model):
+class SimpleModel(tf.keras.Model):
     conv = Conv2D
 
     def __init__(self, outputs, data_format):
@@ -27,7 +27,7 @@ class Model(tf.keras.Model):
         x = self.conv2(x)
         return self.dense(self.pool(x))
 
-class Trainer(RandAugmentTrainer, TFDSTrainer):
+class SimpleTrainer(RandAugmentTrainer, TFDSTrainer):
     opt = lambda _, lr: MovingAverage(
         tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
@@ -39,7 +39,7 @@ class Trainer(RandAugmentTrainer, TFDSTrainer):
 
         if border_conv:
             Model.conv = BorderConv2D
-        self.model = Model(self.outputs, self.data_format)
+        self.model = SimpleModel(self.outputs, self.data_format)
         self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
                      ["categorical_accuracy"])
 
