@@ -146,6 +146,7 @@ class TPUBatchNormalization(tf.keras.layers.BatchNormalization):
         else:
             return (means, variances)
 
+# specialized for fast inference with MBConv
 class Conv2D(tf.keras.layers.Conv2D):
     def call(self, inputs):
         single_inference = self.data_format == "channels_first" and \

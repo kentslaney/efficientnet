@@ -11,8 +11,9 @@ class Border:
         self.rank, self.register = rank, register or tf.Variable
         width, stride = map(expand(rank), (width, stride))
         self.stride = tf.convert_to_tensor(stride)
+        self.sizes = tuple(((i - 1) // 2, i // 2) for i in width)
         self.values = [[self.initialize(size, i, axis, bool(end))
-                        for end, size in enumerate(((i - 1) // 2, i // 2))]
+                        for end, size in enumerate(self.sizes[axis])]
                        for axis, i in enumerate(width)]
 
     # @tf.function(input_signature=[tf.TensorSpec([None], tf.int32)])
@@ -30,9 +31,8 @@ class Border:
             return res
 
         size, stride = shape[axis], self.stride[axis]
-        start, end = self.values[axis]
-        ssize, esize = map(tf.size, (start, end))
-        start, end = self.conv(start, False), self.conv(end, True)
+        (start, end), (ssize, esize) = self.values[axis], self.sizes[axis]
+        start, end = self.conv(start, True), self.conv(end, False)
         if ssize + esize <= size:
             middle = tf.repeat(self.default, size - ssize - esize)
         elif tf.math.maximum(ssize, esize) <= size:
@@ -57,20 +57,11 @@ class Border:
             self._build(shape, built + [end]),
         ), len(built))
 
-    # @tf.function(input_signature=[
-    #     tf.TensorSpec([None]), tf.TensorSpec([], tf.bool)])
-    def conv(self, inp, end):
-        out = inp
-        if tf.size(inp) > 1:
-            for i in tf.range(1, tf.size(inp)):
-                j = ((inp, i), (out, 0))
-                (left, offset), (right, lim) = j if end else j[::-1]
-                update = self.compose(right[i:], left[:-i])
-                ind = tf.range(offset, tf.size(inp) - lim)[:, tf.newaxis]
-                out = tf.tensor_scatter_nd_update(out, ind, update)
-        return out
-
     def initialize(self, size, width, axis, end):
+        raise NotImplementedError()
+
+    @classmethod
+    def conv(_, x, reverse):
         raise NotImplementedError()
 
     @classmethod
@@ -91,6 +82,10 @@ class BorderReweight(Border):
         return self.register(res, name=name)
 
     @classmethod
+    def conv(cls, x, reverse):
+        return tf.math.cumprod(x, reverse=reverse)
+
+    @classmethod
     def compose(_, a, b):
         return a * b
 
@@ -109,6 +104,10 @@ class BorderOffset(Border):
     def initialize(self, size, width, axis, end):
         name = f"border_bias_axis{axis}_{'end' if end else 'start'}"
         return self.register(tf.zeros((size,)), name=name)
+
+    @classmethod
+    def conv(cls, x, reverse):
+        return tf.math.cumsum(x, reverse=reverse)
 
     @classmethod
     def compose(_, a, b):

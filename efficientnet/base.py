@@ -45,10 +45,10 @@ class Trainer:
         formatted = name.format(time=strftime())
         self._path = path = os.path.join(path, formatted)
         ckpts, logs = os.path.join(path, "ckpts"), os.path.join(path, "logs")
-        os.makedirs(ckpts, exist_ok=True)
+        tf.io.gfile.makedirs(ckpts)
 
-        prev = ((i.stat().st_ctime, i.path) for i in os.scandir(ckpts))
-        prev = max(prev, default=(None, None))[1]
+        prev = max(((i.stat().st_ctime, i.path) for i in
+                    tf.io.gfile.listdir(ckpts)), default=(None, None))[1]
         if prev is not None:
             self.checkpoint = prev
         elif formatted != name:
