@@ -111,11 +111,11 @@ class Normalized:
             res = False
 
         assert 2 <= len(args) <= 3
-        args = (args[1],) + args if len(args) == 2 else args
-        return (res,) + tuple(tf.constant(i, tf.float32) for i in args)
+        return (res,) + tuple((args[1],) + args if len(args) == 2 else args)
 
     @classmethod
     def map(cls, floor, lo, center, hi, v):
+        lo, center, hi = (tf.constant(i, tf.float32) for i in (lo, center, hi))
         v, lo, hi = tf.math.abs(v), center, lo if v < 0 else hi
         if floor:
             v, lo, hi = tf.cond(
@@ -282,7 +282,9 @@ class Equalize(Augmentation):
         return tf.gather(tf.cast(lut, tf.uint8), imi)
 
 class Cutout(Augmentation):
-    replace = tf.constant(Reformat.mean)[tf.newaxis, tf.newaxis, :]
+    def __init__(self, *args, **kwargs):
+        self.replace = tf.constant(Reformat.mean)[tf.newaxis, tf.newaxis, :]
+        super().__init__(*args, **kwargs)
 
     @normalize((0, 0.6))
     def call(self, im, value):
@@ -315,9 +317,11 @@ class Transformation(Augmentation):
         return im
 
 class ApplyTransform(Blended):
-    required, _output, _transform = True, tf.zeros((2,), tf.int32), tf.eye(3)
-    replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
-    track = ("_output", "_transform")
+    required, track = True, ("_output", "_transform")
+
+    def __init__(self, *args, **kwargs):
+        self._output, self._transform = tf.zeros((2,), tf.int32), tf.eye(3)
+        self.replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
 
     def output(self, im):
         return tf.shape(im)[:-1] if tf.reduce_all(

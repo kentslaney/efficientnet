@@ -7,10 +7,11 @@ class Border:
     default = None
 
     def __init__(self, width, stride=1, rank=2, register=None):
-        assert self.default is not None and tf.rank(self.default) == 0
+        assert self.default is not None
         self.rank, self.register = rank, register or tf.Variable
         width, stride = map(expand(rank), (width, stride))
         self.stride = tf.convert_to_tensor(stride)
+        self.default = tf.convert_to_tensor(self.default)
         self.sizes = tuple(((i - 1) // 2, i // 2) for i in width)
         self.values = [[self.initialize(size, i, axis, bool(end))
                         for end, size in enumerate(self.sizes[axis])]
@@ -73,7 +74,7 @@ class Border:
         raise NotImplementedError()
 
 class BorderReweight(Border):
-    default = tf.constant(1.)
+    default = 1.
 
     def initialize(self, size, width, axis, end):
         name = f"border_reweight_axis{axis}_{'end' if end else 'start'}"
@@ -99,7 +100,7 @@ class BorderReweight(Border):
 # by subtracting adjacent values towards the relevant corner therefore you need
 # O(n^2) information to suplement the lost corners
 class BorderOffset(Border):
-    default = tf.constant(0.)
+    default = 0.
 
     def initialize(self, size, width, axis, end):
         name = f"border_bias_axis{axis}_{'end' if end else 'start'}"
