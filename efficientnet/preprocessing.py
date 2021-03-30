@@ -296,7 +296,7 @@ class Cutout(Augmentation):
         bounds = tf.math.minimum(bounds, [shape - 1])
         padding = tf.transpose([[1], [-1]] * (bounds - [[0, 0], shape]))
         mask = tf.pad(tf.ones(bounds[1] - bounds[0]), padding)[..., tf.newaxis]
-        return tf.where(mask > 0, __class__.replace, im)
+        return tf.where(mask > 0, self.replace, im)
 
 class Flip(Augmentation):
     required = True
@@ -339,7 +339,6 @@ class ApplyTransform(Blended):
         im = transform(
             im, flat[:-1] / flat[-1], "BILINEAR", output_shape=self.output(im))
 
-        self._output, self._transform = __class__._output, __class__._transform
         return im[..., -1:], self.replace, im[..., :-1]
 
 class TranslateX(Transformation):
