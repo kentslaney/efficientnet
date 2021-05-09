@@ -47,9 +47,9 @@ class TestBorderReweight(unittest.TestCase):
         # tf.config.run_functions_eagerly(False)
 
 class MockBorderOffset(BorderOffset):
-    def __init__(self, width, *args, **kwargs):
+    def __init__(self, width, *args, **kw):
         self.width = width
-        super().__init__(width, *args, **kwargs)
+        super().__init__(width, *args, **kw)
 
     def initialize(self, size, width, axis, end):
         return tf.ones((size,)) * self.width[1 - axis]

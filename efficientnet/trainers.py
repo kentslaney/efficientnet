@@ -22,27 +22,6 @@ presets = [
 
 class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
     base = Classifier
-    opt = lambda _, lr: MovingAverage(
-        tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
-
-    @cli_builder
-    def build(self, size=None, preset=0, custom=None, name=None, **kwargs):
-        if custom is None:
-            _name, _size, *custom = presets[preset]
-            size = _size if size is None else size
-            name = _name if name is None else name
-        self.mapper = lambda f: lambda x, y: (
-            f(x), tf.one_hot(y, self.outputs))
-        super().build(size=size, **kwargs)
-
-        if self.tpu:
-            self.base.base.bn = TPUBatchNorm
-        self.model = self.base(
-            *custom, name=name, outputs=self.outputs, pretranspose=self.tpu,
-            data_format=self.data_format)
-
-        self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
-                     ["categorical_accuracy"])
 
     @classmethod
     def cli(cls, parser):
@@ -57,6 +36,34 @@ class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
             "name to assign to the model; potentially useful to differentiate "
             "exports"))
         super().cli(parser)
+
+    @cli_builder
+    def __init__(self, dataset="imagenet2012", size=None, preset=0,
+                 custom=None, name=None, **kw):
+        if custom is None:
+            _name, _size, *custom = presets[preset]
+            size = _size if size is None else size
+            name = _name if name is None else name
+        self.model = self.base(*custom, name=name)
+        super().__init__(dataset=dataset, size=size, **kw)
+
+    def opt(self, lr):
+        return MovingAverage(tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
+
+    def mapper(self, f):
+        return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
+
+    @cli_builder
+    def build(self, **kw):
+        super().build(**kw)
+
+        if self.tpu:
+            self.model.base.bn = TPUBatchNorm
+
+        self.model.builder(outputs=self.outputs, pretranspose=self.tpu,
+                           data_format=self.data_format)
+        self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
+                     ["categorical_accuracy"])
 
 class BorderMBConv(MBConv):
     # depthwise = DepthwiseConv2D

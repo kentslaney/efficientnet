@@ -29,27 +29,18 @@ class Embedding(tf.keras.Model):
         Block(3, 320, 6, 1, 1),
     ]
 
-    def __init__(self, width, depth, dropout=0.2, divisor=8, stem=32,
-                 data_format='channels_first', pretranspose=False, **kwargs):
-        super().__init__(**kwargs)
-        self.width, self.depth, self.divisor, self.dropout, self.data_format, \
-            self.pretranspose = width, depth, divisor, dropout, data_format, \
-                pretranspose
+    def __init__(self, width, depth, dropout=0.2, divisor=8, stem=32, **kw):
+        self.width, self.depth, self.divisor, self.dropout = \
+            width, depth, divisor, dropout
         self.stem = self.round_filters(stem)
         self.total = sum(block.repeats for block in self.blocks)
-
-        self.conv = partial(
-            self.base.conv, padding='same', data_format=data_format,
-            kernel_initializer=self.initialization)
-        channel = -1 if data_format == 'channels_last' else 1
-        self.bn = partial(self.base.bn, axis=channel)
 
         for block in self.blocks:
             block.outputs = self.round_filters(block.outputs)
             block.repeats = self.round_repeats(block.repeats)
-        __class__._build(self)
+        super().__init__(**kw)
 
-    def kwargs(self, overall, repeat):
+    def kw(self, overall, repeat):
         return {
             **({"strides": 1} if repeat else {}),
             "dropout": self.dropout * overall / self.total,
@@ -69,15 +60,21 @@ class Embedding(tf.keras.Model):
     def round_repeats(self, repeats):
         return int(ceil(self.depth * repeats))
 
-    def _build(self):
+    def builder(self, data_format='channels_first', pretranspose=False):
+        self.data_format, self.pretranspose = data_format, pretranspose
+        self.conv = partial(
+            self.base.conv, padding='same', data_format=self.data_format,
+            kernel_initializer=self.initialization)
+        channel = -1 if data_format == 'channels_last' else 1
+        self.bn = partial(self.base.bn, axis=channel)
+
         self._stem_conv = self.conv(self.stem, 3, 2, use_bias=False)
         self._stem_bn = self.bn()
 
         self._blocks, i = [], 0
         for block in self.blocks:
             for j in range(block.repeats):
-                self._blocks.append(self.base(**{
-                    **block, **self.kwargs(i, j)}))
+                self._blocks.append(self.base(**{**block, **self.kw(i, j)}))
                 i += 1
 
     def call(self, inputs, training):
@@ -97,20 +94,19 @@ class Classifier(Embedding):
         scale=1 / 3, mode='fan_out', distribution='uniform')
     drop = tf.keras.layers.Dropout
 
-    def __init__(self, *args, head_drop=0.2, outputs=1000, head=1280, **kw):
+    def __init__(self, *args, head_drop=0.2, head=1280, **kw):
         super().__init__(*args, **kw)
-        self.outputs, self.head_drop = outputs, head_drop
-        self.head = self.round_filters(head)
-        self._head_drop = self.drop(head_drop)
-        self.pool = tf.keras.layers.GlobalAveragePooling2D(
-            data_format=self.data_format)
-        __class__._build(self)
+        self.head_drop, self.head = head_drop, self.round_filters(head)
 
-    def _build(self):
+    def builder(self, outputs=1000, **kw):
+        super().builder(**kw)
+        self._head_drop = self.drop(self.head_drop)
         self._head_conv = self.conv(self.head, 1, use_bias=False)
         self._head_bn = self.bn()
         self._fc = tf.keras.layers.Dense(
-            self.outputs, "softmax", kernel_initializer=self.dense_init)
+            outputs, "softmax", kernel_initializer=self.dense_init)
+        self.pool = tf.keras.layers.GlobalAveragePooling2D(
+            data_format=self.data_format)
 
     def call(self, inputs, training):
         x = super().call(inputs, training)

@@ -13,23 +13,23 @@ class CondCall:
         self.f, self.parent, self.bypass = f, parent, bypass
         update_wrapper(self, f)
 
-    def __call__(self, *args, **kwargs):
-        return self.f(*args, **kwargs)
+    def __call__(self, *args, **kw):
+        return self.f(*args, **kw)
 
-    def cond(self, tensor, im, *args, **kwargs):
+    def cond(self, tensor, im, *args, **kw):
         if self.bypass:
-            return self(im, *args, **kwargs)
+            return self(im, *args, **kw)
 
         identity = self.parent.variables
         res, self.parent.variables = tf.cond(
-            tensor, lambda: (self(im, *args, **kwargs), self.parent.variables),
+            tensor, lambda: (self(im, *args, **kw), self.parent.variables),
             lambda: (im, identity))
         return res
 
 class OpsList:
-    def __init__(self, parent, ops, args, kwargs):
+    def __init__(self, parent, ops, args, kw):
         self.parent = parent
-        sub = [[j(*args, **kwargs) for j in i.ops] for i in ops]
+        sub = [[j(*args, **kw) for j in i.ops] for i in ops]
         self.ops, self.objs, self.required = (sum(i, []) for i in zip(*sum((
             [(obj.ops.ops, obj.ops.objs, obj.ops.required) for obj in objs] + [
                 ([op], [parent], [op.required])]
@@ -70,11 +70,11 @@ class OpsList:
             self.ops, self.objs)), []))
 
 class Normalized:
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kw):
         self = super().__new__(cls)
         def decorator(f):
             self.__init__(f)
-            self.normal = self.sig.bind_partial(*args, **kwargs).arguments
+            self.normal = self.sig.bind_partial(*args, **kw).arguments
             for k, v in self.normal.items():
                 kind = self.sig.parameters[k]
                 if kind == Parameter.VAR_POSITIONAL:
@@ -89,8 +89,8 @@ class Normalized:
     def __init__(self, f):
         self.f, self.sig = f, signature(f)
 
-    def __call__(self, *args, **kwargs):
-        bound = self.sig.bind(*args, **kwargs)
+    def __call__(self, *args, **kw):
+        bound = self.sig.bind(*args, **kw)
         bound.apply_defaults()
         bargs = bound.arguments
         for k, v in bargs.items():
@@ -127,12 +127,12 @@ class Normalized:
         else:
             return tf.cast(v * (hi - lo) + lo, tf.float32)
 
-def normalize(*args, **kwargs):
-    return Normalized((), (), *args, **kwargs)
+def normalize(*args, **kw):
+    return Normalized((), (), *args, **kw)
 
 class Augmentation:
     required, ops, track = False, (), ()
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kw):
         res, ops = super().__new__(cls), defaultdict(list)
         ops[cls].append((cls,))
         for i in cls.__mro__:
@@ -142,14 +142,14 @@ class Augmentation:
             for p, b in zip(parents, base):
                 ops[p] += b
         res.ops = OpsList(res, tuple(i[0] for i in sorted(
-            ops[__class__], key=lambda x: x[::-1])), args, kwargs)
+            ops[__class__], key=lambda x: x[::-1])), args, kw)
         return res
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kw):
         pass
 
-    def caller(self, cls, *args, **kwargs):
-        return cls.call(self, *args, **kwargs)
+    def caller(self, cls, *args, **kw):
+        return cls.call(self, *args, **kw)
 
     @property
     def variables(self):
@@ -182,8 +182,8 @@ class Reformat(Augmentation):
     required = True
     mean, norm = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 
-    def __init__(self, *args, data_format="channels_first", **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, data_format="channels_first", **kw):
+        super().__init__(*args, **kw)
         self.channels_last = data_format == "channels_last"
 
     def call(self, im):
@@ -192,8 +192,8 @@ class Reformat(Augmentation):
 
 # adjustments
 class Blended(Augmentation):
-    def caller(self, cls, im, *args, **kwargs):
-        res = cls.call(self, im, *args, **kwargs)
+    def caller(self, cls, im, *args, **kw):
+        res = cls.call(self, im, *args, **kw)
         m, im0, im1 = res if len(res) == 3 else res + (im,)
         return tf.clip_by_value(im0 + m * (im1 - im0), 0., 1.)
 
@@ -210,8 +210,8 @@ class Brightness(Blended):
 class Sharpness(Blended):
     size, center = 3, 5
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
         kernel = tf.ones((self.size, self.size, 1, 1))
         kernel = tf.tensor_scatter_nd_update(
             kernel, [[self.size // 2, self.size // 2, 0, 0]], [self.center])
@@ -282,9 +282,9 @@ class Equalize(Augmentation):
         return tf.gather(tf.cast(lut, tf.uint8), imi)
 
 class Cutout(Augmentation):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kw):
         self.replace = tf.constant(Reformat.mean)[tf.newaxis, tf.newaxis, :]
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kw)
 
     @normalize((0, 0.6))
     def call(self, im, value):
@@ -312,14 +312,14 @@ class Adjust(Group):
 
 # transformations
 class Transformation(Augmentation):
-    def caller(self, cls, im, *args, **kwargs):
-        self._transform @= cls.call(self, im, *args, **kwargs)
+    def caller(self, cls, im, *args, **kw):
+        self._transform @= cls.call(self, im, *args, **kw)
         return im
 
 class ApplyTransform(Blended):
     required, track = True, ("_output", "_transform")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kw):
         self._output, self._transform = tf.zeros((2,), tf.int32), tf.eye(3)
         self.replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
 
@@ -388,12 +388,12 @@ class PaddedRotate(Rotate):
 class Reshape(ApplyTransform):
     required = True
 
-    def __init__(self, shape, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, shape, *args, **kw):
+        super().__init__(*args, **kw)
         self.shape, self._shape = tf.convert_to_tensor(shape), tuple(shape)
 
-    def caller(self, cls, im, *args, **kwargs):
-        im = super().caller(cls, im, *args, **kwargs)
+    def caller(self, cls, im, *args, **kw):
+        im = super().caller(cls, im, *args, **kw)
         im.set_shape(self._shape + (None,))
         return im
 
@@ -405,8 +405,8 @@ class Stretch(Reshape):
         return super().call(im)
 
 class Crop(Reshape):
-    def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kw):
+        super().__init__(*args, **kw)
         dist = tfp.distributions.Beta(a, b)
         iid = lambda: dist.sample((2,))
         same = lambda: tf.repeat(dist.sample(), 2)
@@ -441,8 +441,8 @@ class CroppedTransforms(Rotate, Shear, Crop):
 
 # endpoints
 class Randomize(Group):
-    def __init__(self, *args, n=3, m=.4, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, n=3, m=.4, **kw):
+        super().__init__(*args, **kw)
         self.n, self.m = self.ops.choosable if n == -1 else n, m
 
     def __call__(self, im):

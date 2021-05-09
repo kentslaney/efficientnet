@@ -11,7 +11,7 @@ class SimpleModel(tf.keras.Model):
         self.conv = partial(conv, padding='same', data_format=data_format,
                             activation=tf.nn.relu)
         self.conv0 = self.conv(128, 4, 2)
-        self.conv1 = self.conv(192, 1, 2)
+        self.conv1 = self.conv(192, 4, 2, use_bias=False)
         self.conv2 = self.conv(256, 4, 2)
         self.pool = tf.keras.layers.GlobalAveragePooling2D(data_format)
         self.dense = tf.keras.layers.Dense(outputs, activation=tf.nn.softmax)
@@ -23,21 +23,28 @@ class SimpleModel(tf.keras.Model):
         return self.dense(self.pool(x))
 
 class SimpleTrainer(RandAugmentTrainer, TFDSTrainer):
-    opt = lambda _, lr: MovingAverage(
-        tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
+    @classmethod
+    def cli(cls, parser):
+        parser.add_argument("--border-conv", action="store_true")
+        super().cli(parser)
 
     @cli_builder
-    def build(self, border_conv=False, size=64, **kwargs):
-        self.mapper = lambda f: lambda x, y: (
-            f(x), tf.one_hot(y, self.outputs))
-        super().build(size=size, **kwargs)
+    def __init__(self, learning_rate=1e-6, decay=False, augment=False,
+                 dataset="mnist", **kw):
+        super().__init__(learning_rate=learning_rate, decay=decay,
+                         augment=augment, dataset=dataset, **kw)
+
+    def opt(self, lr):
+        return tf.keras.optimizers.Adam(lr)
+
+    def mapper(self, f):
+        return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
+
+    @cli_builder
+    def build(self, border_conv=False, size=32, **kw):
+        super().build(size=size, **kw)
 
         conv = BorderConv2D if border_conv else Conv2D
         self.model = SimpleModel(self.outputs, self.data_format, conv)
         self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
                      ["categorical_accuracy"])
-
-    @classmethod
-    def cli(cls, parser):
-        parser.add_argument("--border-conv", action="store_true")
-        super().cli(parser)

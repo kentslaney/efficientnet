@@ -20,9 +20,9 @@ class Border:
     # @tf.function(input_signature=[tf.TensorSpec([None], tf.int32)])
     def __call__(self, shape):
         tf.debugging.assert_equal(tf.shape(shape), (self.rank,))
-        return self._build(shape, [])
+        return self.builder(shape, [])
 
-    def _build(self, shape, built):
+    def builder(self, shape, built):
         axis = len(built)
         if axis == self.rank:
             built = tf.meshgrid(*built, indexing="ij")
@@ -53,9 +53,9 @@ class Border:
         end = end[(stride + offset - ssize - msize) % stride::stride]
 
         return tf.concat((
-            self._build(shape, built + [start]),
-            self._build(shape, built + [middle]),
-            self._build(shape, built + [end]),
+            self.builder(shape, built + [start]),
+            self.builder(shape, built + [middle]),
+            self.builder(shape, built + [end]),
         ), len(built))
 
     def initialize(self, size, width, axis, end):
@@ -119,18 +119,8 @@ class BorderOffset(Border):
         return a + b
 
 class BorderConv:
-    def register(self, kernel=False):
-        args = (self.kernel_regularizer, self.kernel_constraint) \
-            if kernel else (self.bias_regularizer, self.bias_constraint)
-        added = dict(zip(("regularizer", "constraint"), args))
-        def wrapper(initial, name):
-            wrapped = lambda *args, **kwargs: initial
-            return self.add_weight(
-                name, tf.shape(initial), initial.dtype, wrapped, **added)
-        return wrapper
-
-    def __init__(self, *args, activation=None, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, activation=None, **kw):
+        super().__init__(*args, **kw)
         assert self.padding == "same" and all(
             i == 1 for i in self.dilation_rate)
         self._activation = tf.keras.activations.get(activation)
@@ -142,12 +132,12 @@ class BorderConv:
             return
 
         self.border_weight = BorderReweight(
-            self.kernel_size, self.strides, self.rank, self.register(True))
+            self.kernel_size, self.strides, self.rank)
         if self.use_bias:
             self.border_bias = BorderOffset(
-                self.kernel_size, self.strides, self.rank, self.register())
+                self.kernel_size, self.strides, self.rank)
 
-    def _build(self, input_shape):
+    def builder(self, input_shape):
         input_shape = input_shape[2:] if self._channels_first else \
             input_shape[1:-1]
         weight = tf.expand_dims(self.border_weight(
@@ -161,7 +151,7 @@ class BorderConv:
         if self.small:
             return self._activation(res)
 
-        weight, bias = self._build(tf.shape(inputs))
+        weight, bias = self.builder(tf.shape(inputs))
         return self._activation(weight * res + bias)
 
 class Conv1D(BorderConv, tf.keras.layers.Conv1D):

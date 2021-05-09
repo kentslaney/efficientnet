@@ -18,24 +18,24 @@ class Default:
 def cli_builder(f):
     params = signature(f).parameters
     @wraps(f)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kw):
         args = tuple(param.default if arg is Default else arg
                      for arg, param in zip(args, params))
-        kwargs = {k: params[k].default if v is Default and k in params else v
-                  for k, v in kwargs.items()}
-        return f(*args, **kwargs)
+        kw = {k: params[k].default if v is Default and k in params else v
+              for k, v in kw.items()}
+        return f(*args, **kw)
     return wrapper
 
 class ArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, **kwargs):
-        kwargs = {
+    def __init__(self, *args, **kw):
+        kw = {
             "formatter_class": HelpFormatter,
             "argument_default": Default,
-            **kwargs
+            **kw
         }
-        super().__init__(*args, **kwargs)
-        kwargs["add_help"] = False
-        self._group, self.copy = None, lambda: self.__class__(*args, **kwargs)
+        super().__init__(*args, **kw)
+        kw["add_help"] = False
+        self._group, self.copy = None, lambda: self.__class__(*args, **kw)
 
     @property
     def group(self):
@@ -72,8 +72,8 @@ class NoStrategy:
 
 def RequiredLength(minimum, maximum):
     class RequiredLength(argparse.Action):
-        def __init__(self, option_strings, dest, **kwargs):
-            super().__init__(option_strings, dest, nargs="*", **kwargs)
+        def __init__(self, option_strings, dest, **kw):
+            super().__init__(option_strings, dest, nargs="*", **kw)
 
         def __call__(self, parser, namespace, values, option_string=None):
             if not minimum <= len(values) <= maximum:
@@ -121,11 +121,11 @@ def tpu_prep(f):
     return lambda im: tf.cast(tf.transpose(f(im), [1, 2, 3, 0]), tf.bfloat16)
 
 class TPUBatchNormalization(tf.keras.layers.BatchNormalization):
-    def __init__(self, fused=False, name="BatchNormalization", **kwargs):
+    def __init__(self, fused=False, name="BatchNormalization", **kw):
         assert tf.distribute.in_cross_replica_context()
         if fused in (True, None):
             raise ValueError('fused batch norm not supported across groups')
-        super().__init__(fused=fused, name=name, **kwargs)
+        super().__init__(fused=fused, name=name, **kw)
 
     def _group_average(self, tensor, shards, group_size):
         assignments = [[j for j in range(shards) if j // group_size == i]

@@ -10,8 +10,8 @@ class MBConv(tf.keras.layers.Layer):
         scale=2.0, mode='fan_out', distribution='untruncated_normal')
     drop = tf.keras.layers.Dropout
 
-    def activation(self, *args, **kwargs):
-        return tf.nn.swish(*args, **kwargs)
+    def activation(self, *args, **kw):
+        return tf.nn.swish(*args, **kw)
 
     def __init__(self, size=3, outputs=32, expand=6, residuals=True, strides=1,
                  se_ratio=0.25, dropout=0, data_format='channels_first', **kw):
@@ -25,17 +25,18 @@ class MBConv(tf.keras.layers.Layer):
         self.residuals = residuals and bool(tf.reduce_all(
             strides == tf.constant(1)))
 
-        self.bn = partial(self.bn, axis=self.channel)
-        self.conv = partial(self.conv, padding='same', data_format=data_format,
-                            kernel_initializer=self.initialization)
-        self.depthwise = partial(self.depthwise, data_format=data_format,
-                                 depthwise_initializer=self.initialization,
-                                 padding='same')
-
     def pool(self, inputs):
         return tf.reduce_mean(inputs, self.spacial, True)
 
     def build(self, input_shape):
+        self.bn = partial(self.bn, axis=self.channel)
+        self.conv = partial(
+            self.conv, padding='same', data_format=self.data_format,
+            kernel_initializer=self.initialization)
+        self.depthwise = partial(
+            self.depthwise, data_format=self.data_format, padding='same',
+            depthwise_initializer=self.initialization)
+
         input_channels = input_shape[self.channel]
         self.residuals = self.residuals and input_channels == self.outputs
         filters = input_channels * self.expand
