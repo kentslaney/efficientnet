@@ -3,26 +3,27 @@ from utils import Conv2D as SpecializedConv2D
 
 expand = lambda r: lambda x: (x,) * r if tf.rank(x) == 0 else x
 
-class Border:
+class Border(tf.Module):
     default = None
 
-    def __init__(self, width, stride=1, rank=2, register=None):
+    def __init__(self, width, stride=1, rank=2, register=None, name=None):
+        super().__init__(name=name)
         assert self.default is not None
         self.rank, self.register = rank, register or tf.Variable
         width, stride = map(expand(rank), (width, stride))
         self.stride = tf.convert_to_tensor(stride)
         self.default = tf.convert_to_tensor(self.default)
         self.sizes = tuple(((i - 1) // 2, i // 2) for i in width)
-        self.values = [[self.initialize(size, i, axis, bool(end))
-                        for end, size in enumerate(self.sizes[axis])]
-                       for axis, i in enumerate(width)]
+        with self.name_scope:
+            self.values = [[self.initialize(size, i, axis, bool(end))
+                            for end, size in enumerate(self.sizes[axis])]
+                        for axis, i in enumerate(width)]
 
-    # @tf.function(input_signature=[tf.TensorSpec([None], tf.int32)])
     def __call__(self, shape):
         tf.debugging.assert_equal(tf.shape(shape), (self.rank,))
-        return self.builder(shape, [])
+        return self.build(shape, [])
 
-    def builder(self, shape, built):
+    def build(self, shape, built):
         axis = len(built)
         if axis == self.rank:
             built = tf.meshgrid(*built, indexing="ij")
@@ -53,9 +54,9 @@ class Border:
         end = end[(stride + offset - ssize - msize) % stride::stride]
 
         return tf.concat((
-            self.builder(shape, built + [start]),
-            self.builder(shape, built + [middle]),
-            self.builder(shape, built + [end]),
+            self.build(shape, built + [start]),
+            self.build(shape, built + [middle]),
+            self.build(shape, built + [end]),
         ), len(built))
 
     def initialize(self, size, width, axis, end):
@@ -98,7 +99,7 @@ class BorderReweight(Border):
 # n by n kernel
 # Proof: if you conv a kernel with ones, you can recover all the kernel weights
 # by subtracting adjacent values towards the relevant corner therefore you need
-# O(n^2) information to suplement the lost corners
+# O(n^2) information to supplement the lost corners
 class BorderOffset(Border):
     default = 0.
 
@@ -119,8 +120,8 @@ class BorderOffset(Border):
         return a + b
 
 class BorderConv:
-    def __init__(self, *args, activation=None, **kw):
-        super().__init__(*args, **kw)
+    def __init__(self, *args, activation=None, name=None, **kw):
+        super().__init__(*args, name=name, **kw)
         assert self.padding == "same" and all(
             i == 1 for i in self.dilation_rate)
         self._activation = tf.keras.activations.get(activation)
@@ -128,14 +129,20 @@ class BorderConv:
             self._activation = lambda x: x
 
         self.small = bool(tf.reduce_all(self.kernel_size == tf.constant(1)))
+
+    def build(self, input_shape):
+        super().build(input_shape)
         if self.small:
             return
 
         self.border_weight = BorderReweight(
             self.kernel_size, self.strides, self.rank)
+        self._border_weight_values = self.border_weight.values
+
         if self.use_bias:
             self.border_bias = BorderOffset(
                 self.kernel_size, self.strides, self.rank)
+            self._border_bias_values = self.border_bias.values
 
     def builder(self, input_shape):
         input_shape = input_shape[2:] if self._channels_first else \

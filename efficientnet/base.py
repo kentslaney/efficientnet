@@ -56,6 +56,7 @@ class Trainer:
                 "prevents saving checkpoints or tensorboard logs to disk"))
         group.add_argument("--job-dir", dest="base", metavar="PATH", help=(
             "prefix for training directory"))
+        group.add_argument("--resume", metavar="PATH", help="load from path")
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument(
@@ -76,7 +77,7 @@ class Trainer:
                 "use MirroredStrategy for distribution; equivalent to "
                 "--distribute MirroredStrategy [DEVICE...]"))
 
-        parser.set_defaults(call=cls)
+        parser.set_defaults(call=cls.train)
 
     @classmethod
     def train(cls, **kw):
@@ -86,20 +87,22 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 **kw):
+                 resume=None, **kw):
         self.batch, self.learning_rate = batch, learning_rate
         self.data_format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
         self.should_decay, self.callbacks = decay, []
 
         self.distribute(*parse_strategy(distribute))
-        if base is not None:
+        if resume is not None:
+            self.path = os.path.abspath(resume).rsplit(os.path.sep, 1)
+        elif base is not None:
             self.path = base, suffix
 
         self.build(**kw)
 
     @property
-    def path(value):
+    def path(self):
         return self._path
 
     @path.setter
@@ -110,10 +113,12 @@ class Trainer:
         ckpts, logs = os.path.join(path, "ckpts"), os.path.join(path, "logs")
         tf.io.gfile.makedirs(ckpts)
 
-        prev = max(((i.stat().st_ctime, i.path) for i in
-                    tf.io.gfile.listdir(ckpts)), default=(None, None))[1]
+        prev = [os.path.join(ckpts, i) for i in tf.io.gfile.listdir(ckpts)]
+        prev = max(((tf.io.gfile.stat(i).mtime_nsec, i)
+                    for i in prev), default=(None, None))[1]
         if prev is not None:
             self.checkpoint = prev
+            print(f"Loading model from checkpoint {self.checkpoint}")
         elif formatted != name:
             print(f'Writing to training directory {path}')
 
@@ -155,7 +160,7 @@ class Trainer:
         if self.tpu:
             train, validation = map(tpu_prep, (train, validation))
 
-        self.dataset = self.dataset.shuffle(2048).map(
+        self.dataset = self.dataset.shuffle(self.batch * 4).map(
             self.mapper(train), tune).batch(self.batch, True).prefetch(
                 tune).with_options(options)
 

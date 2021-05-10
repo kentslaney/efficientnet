@@ -14,7 +14,6 @@ def train_cli(parser):
     for k, v in cli_names.items():
         sub = subparsers.add_parser(k)
         v.cli(sub)
-        sub.set_defaults(call=v.train)
 
 @cli_builder
 def preview(dataset="imagenette/320px-v2", pad=False, augment=True, size=224,
