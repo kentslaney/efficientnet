@@ -3,14 +3,14 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
-    PresetFlag, cli_builder, relpath
+    PresetFlag, cli_builder, relpath, Checkpointer
 )
 from preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
 )
 
 class Trainer:
-    _path, _format, checkpoint, length = None, None, None, None
+    path, _format, checkpoint, length = None, None, None, None
     # apply preprocessing to data not labels
     mapper = lambda _, f: lambda x, *y: (f(x),) + y
     opt = tf.keras.optimizers.Adam
@@ -92,40 +92,16 @@ class Trainer:
         self.data_format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
         self.should_decay, self.callbacks = decay, []
+        self.step = tf.Variable(0, dtype=tf.int32, name="step")
+        self.epoch = tf.Variable(0, dtype=tf.int32, name="epoch")
 
         self.distribute(*parse_strategy(distribute))
         if resume is not None:
-            self.path = os.path.abspath(resume).rsplit(os.path.sep, 1)
+            self.path = os.path.abspath(resume)
         elif base is not None:
-            self.path = base, suffix
+            self.path = os.path.join(base, suffix.format(time=strftime()))
 
         self.build(**kw)
-
-    @property
-    def path(self):
-        return self._path
-
-    @path.setter
-    def path(self, value):
-        path, name = value
-        formatted = name.format(time=strftime())
-        self._path = path = os.path.join(path, formatted)
-        ckpts, logs = os.path.join(path, "ckpts"), os.path.join(path, "logs")
-        tf.io.gfile.makedirs(ckpts)
-
-        prev = [os.path.join(ckpts, i) for i in tf.io.gfile.listdir(ckpts)]
-        prev = max(((tf.io.gfile.stat(i).mtime_nsec, i)
-                    for i in prev), default=(None, None))[1]
-        if prev is not None:
-            self.checkpoint = prev
-            print(f"Loading model from checkpoint {self.checkpoint}")
-        elif formatted != name:
-            print(f'Writing to training directory {path}')
-
-        self.callbacks += [
-            LRTensorBoard(logs, update_freq=64),
-            tf.keras.callbacks.ModelCheckpoint(
-                os.path.join(ckpts, "ckpt_{epoch}"))]
 
     @property
     def data_format(self):
@@ -138,12 +114,6 @@ class Trainer:
     @data_format.setter
     def data_format(self, value):
         self._format = value
-
-    def decay(self):
-        assert self.length is not None
-        self.callbacks.append(WarmedExponential(
-            self.learning_rate, self.length / self.batch, self.decay_warmup,
-            self.decay_factor))
 
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
@@ -169,22 +139,40 @@ class Trainer:
                 validation), tune).batch(self.batch, True).prefetch(
                     tune).with_options(options)
 
+    def checkpoint(self):
+        if self.path is None:
+            return
+
+        ckpts, logs = (os.path.join(self.path, i) for i in ("ckpts", "logs"))
+        tf.io.gfile.makedirs(ckpts)
+
+        ckptr = Checkpointer(os.path.join(ckpts, "ckpt"), self.epoch,
+                             self.model, opt=self.opt, step=self.step)
+        if tf.io.gfile.listdir(ckpts):
+            path = ckptr.restore(ckpts)
+            print(f"Loading model from checkpoint {path}")
+        else:
+            print(f'Writing to training directory {self.path}')
+
+        self.callbacks += [LRTensorBoard(logs, update_freq=64), ckptr]
+
     def compile(self, *args, **kw):
+        self.checkpoint()
         self.model.compile(self.opt, *args, **kw)
 
     def fit(self):
-        if self.checkpoint is not None:
-            self.model.load_weights(self.checkpoint)
-
         self.model.fit(
             self.dataset, validation_data=self.validation, epochs=self.epochs,
-            callbacks=self.callbacks, batch_size=self.batch)
+            callbacks=self.callbacks, batch_size=self.batch,
+            initial_epoch=self.epoch.numpy().item())
 
     def build(self):
         if self.should_decay:
-            self.decay()
+            assert self.length is not None
+            self.callbacks.append(WarmedExponential(
+                self.learning_rate, self.length / self.batch,
+                self.decay_warmup, self.decay_factor, self.step))
 
-        self.preprocess()
 
 class TFDSTrainer(Trainer):
     @classmethod
@@ -258,15 +246,13 @@ class RandAugmentTrainer(Trainer):
             "recommended size for the preset if unset"))
         super().cli(parser)
 
-    def preprocess(self):
+    @cli_builder
+    def build(self, size=None, augment=True, pad=False, **kw):
+        super().build(**kw)
+        self.size = (size, size) if type(size) == int else size
+        self.augment, self.pad = augment, pad
         train = PrepStretched if not self.augment else \
             RandAugmentPadded if self.pad else RandAugmentCropped
         train = train(self.size, data_format=self.data_format)
         validation = PrepStretched(self.size, data_format=self.data_format)
         super().preprocess(train, validation)
-
-    @cli_builder
-    def build(self, size=None, augment=True, pad=False, **kw):
-        self.size = (size, size) if type(size) == int else size
-        self.augment, self.pad = augment, pad
-        super().build(**kw)

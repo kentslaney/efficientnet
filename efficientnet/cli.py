@@ -1,4 +1,5 @@
 import os, sys, unittest
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from preprocessing import RandAugmentCropped, RandAugmentPadded
@@ -6,8 +7,8 @@ from utils import strftime, helper, ArgumentParser, cli_builder
 from base import RandAugmentTrainer, TFDSTrainer
 from trainers import cli_names
 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 tf.config.optimizer.set_jit(True)
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
 
 def train_cli(parser):
     subparsers = parser.add_subparsers()

@@ -166,10 +166,10 @@ class Conv2D(tf.keras.layers.Conv2D):
         return res
 
 class WarmedExponential(tf.keras.callbacks.Callback):
-    def __init__(self, scale, units, warmup, decay, freq=256):
+    def __init__(self, scale, units, warmup, decay, step=None, freq=128):
         self.scale, self.units, self.warmup, self.decay, self.freq = scale, \
             units, warmup, decay, freq
-        self.step = tf.Variable(0, dtype=tf.int32, name="step")
+        self.step = step or tf.Variable(0, dtype=tf.int32, name="step")
 
     def on_train_batch_begin(self, batch, logs=None):
         self.step.assign_add(1)
@@ -184,3 +184,17 @@ class LRTensorBoard(tf.keras.callbacks.TensorBoard):
         logs = logs or {}
         logs.update({'learning_rate': self.model.optimizer.lr})
         super().on_epoch_end(epoch, logs)
+
+class Checkpointer(tf.keras.callbacks.Callback):
+    def __init__(self, prefix, epoch, root=None, **kw):
+        self.prefix, self.epoch = prefix, epoch
+        self.ckpt = tf.train.Checkpoint(root, epoch=epoch, **kw)
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.epoch.assign_add(1)
+        self.ckpt.save(self.prefix)
+
+    def restore(self, base):
+        path = tf.train.latest_checkpoint(base)
+        self.ckpt.restore(path)
+        return path
