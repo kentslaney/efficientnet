@@ -50,9 +50,6 @@ class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
         return MovingAverage(tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
-    def mapper(self, f):
-        return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
-
     @cli_builder
     def build(self, **kw):
         super().build(**kw)

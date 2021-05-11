@@ -11,8 +11,6 @@ from preprocessing import (
 
 class Trainer:
     path, _format, checkpoint, length = None, None, None, None
-    # apply preprocessing to data not labels
-    mapper = lambda _, f: lambda x, *y: (f(x),) + y
     opt = tf.keras.optimizers.Adam
 
     @classmethod
@@ -123,6 +121,9 @@ class Trainer:
         self.opt = self.opt(self.learning_rate)
         self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
 
+    def mapper(self, f):
+        return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
+
     def preprocess(self, train, validation=None):
         tune = tf.data.experimental.AUTOTUNE
         options = tf.data.Options()
@@ -163,7 +164,7 @@ class Trainer:
     def fit(self):
         self.model.fit(
             self.dataset, validation_data=self.validation, epochs=self.epochs,
-            callbacks=self.callbacks, batch_size=self.batch,
+            callbacks=self.callbacks, batch_size=self.batch, verbose=2,
             initial_epoch=self.epoch.numpy().item())
 
     def build(self):

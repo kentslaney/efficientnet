@@ -37,9 +37,6 @@ class SimpleTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
         return tf.keras.optimizers.Adam(lr)
 
-    def mapper(self, f):
-        return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
-
     @cli_builder
     def build(self, border_conv=False, size=32, **kw):
         super().build(size=size, **kw)
