@@ -12,52 +12,70 @@ class Border(tf.Module):
         self.rank, self.register = rank, register or tf.Variable
         width, stride = map(expand(rank), (width, stride))
         self.stride = tf.convert_to_tensor(stride)
-        self.default = tf.convert_to_tensor(self.default)
         self.sizes = tuple(((i - 1) // 2, i // 2) for i in width)
         with self.name_scope:
             self.values = [[self.initialize(size, i, axis, bool(end))
                             for end, size in enumerate(self.sizes[axis])]
-                        for axis, i in enumerate(width)]
+                           for axis, i in enumerate(width)]
+
+    def slices(self, shape):
+        res = []
+        for axis in range(self.rank):
+            size, stride = shape[axis], self.stride[axis]
+            start, end = self.sizes[axis]
+
+            reps = (size + stride - 1) // stride - 1
+            pad = tf.nn.relu(reps * stride + start + end + 1 - size)
+            offset, diff = start - pad // 2, size - start - end
+            reset = (offset + end - size) % stride
+            midset = (offset - start) % stride
+
+            if diff >= 0:
+                data = (0, (0, 0), (0, 0),
+                        (offset, start + 1), (reset, end + 1),
+                        (diff - midset - 1) // stride + 1)
+            elif tf.math.maximum(start, end) <= size:
+                data = (1, (reset + size - end, start + 1), (reset, -diff),
+                        (offset, size - end), (midset - diff, end + 1), 0)
+            else:
+                data = (2, (offset, size), (offset + end - size, end + 1),
+                        (0, 0), (0, 0), 0)
+
+            res.append(tuple(slice(*i, stride) if type(i) is tuple else i
+                             for i in data))
+        return tuple(res)
 
     def __call__(self, shape):
-        tf.debugging.assert_equal(tf.shape(shape), (self.rank,))
-        return self.build(shape, [])
+        tf.debugging.assert_equal(tf.size(shape), self.rank)
+        return self.build(self.slices(shape), 0, (), ())
 
-    def build(self, shape, built):
-        axis = len(built)
+    def build(self, bounds, axis, sides, expand):
         if axis == self.rank:
-            built = tf.meshgrid(*built, indexing="ij")
-            res = built[0]
-            for i in built[1:]:
-                res = self.compose(res, i)
+            if not sides:
+                return self.default(list(zip(*expand))[1])
+
+            sides = tf.meshgrid(*sides, indexing="ij")
+            res = sides[0]
+            for side in sides[1:]:
+                res = self.compose(res, side)
+            for axis, repeats in expand:
+                res = tf.repeat(tf.expand_dims(res, axis), repeats, axis)
             return res
 
-        size, stride = shape[axis], self.stride[axis]
-        (start, end), (ssize, esize) = self.values[axis], self.sizes[axis]
-        start, end = self.conv(start, True), self.conv(end, False)
-        if ssize + esize <= size:
-            middle = tf.repeat(self.default, size - ssize - esize)
-        elif tf.math.maximum(ssize, esize) <= size:
-            msize = ssize + esize - size
-            middle = self.overlap(start[-msize:], end[:msize])
-            start, end = start[:-msize], end[msize:]
+        start = self.conv(self.values[axis][0], True)
+        end = self.conv(self.values[axis][1], False)
+        inc, bound = axis + 1, bounds[axis]
+        if bound[0] == 0:
+            return tf.concat((
+                self.build(bounds, inc, sides + (start[bound[3]],), expand),
+                self.build(bounds, inc, sides, expand + ((axis, bound[5]),)),
+                self.build(bounds, inc, sides + (end[bound[4]],), expand),
+            ), axis)
         else:
-            middle = self.overlap(start[:size], end[esize - size:])
-            start, end = tf.zeros((0,)), tf.zeros((0,))
-
-        reps = (size + stride - 1) // stride
-        pad = tf.nn.relu((reps - 1) * stride + ssize + esize + 1 - size)
-        offset = ssize - pad // 2
-        ssize, msize = map(tf.size, (start, middle))
-        start = start[offset::stride]
-        middle = middle[(stride + offset - ssize) % stride::stride]
-        end = end[(stride + offset - ssize - msize) % stride::stride]
-
-        return tf.concat((
-            self.build(shape, built + [start]),
-            self.build(shape, built + [middle]),
-            self.build(shape, built + [end]),
-        ), len(built))
+            data = self.overlap(start[bound[1]], end[bound[2]])
+            if bound[0] == 1:
+                data = tf.concat((start[bound[3]], data, end[bound[4]]), 0)
+            return self.build(bounds, inc, sides + (data,), expand)
 
     def initialize(self, size, width, axis, end):
         raise NotImplementedError()
@@ -75,13 +93,15 @@ class Border(tf.Module):
         raise NotImplementedError()
 
 class BorderReweight(Border):
-    default = 1.
-
     def initialize(self, size, width, axis, end):
         name = f"border_reweight_axis{axis}_{'end' if end else 'start'}"
         res = tf.range(width - size, width)[::-1 if end else 1]
         res = tf.cast((res + 1) / res, tf.float32)
         return self.register(res, name=name)
+
+    @classmethod
+    def default(cls, *args, **kw):
+        return tf.ones(*args, **kw)
 
     @classmethod
     def conv(cls, x, reverse):
@@ -101,11 +121,13 @@ class BorderReweight(Border):
 # by subtracting adjacent values towards the relevant corner therefore you need
 # O(n^2) information to supplement the lost corners
 class BorderOffset(Border):
-    default = 0.
-
     def initialize(self, size, width, axis, end):
         name = f"border_bias_axis{axis}_{'end' if end else 'start'}"
         return self.register(tf.zeros((size,)), name=name)
+
+    @classmethod
+    def default(cls, *args, **kw):
+        return tf.zeros(*args, **kw)
 
     @classmethod
     def conv(cls, x, reverse):

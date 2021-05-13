@@ -38,27 +38,26 @@ class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
         super().cli(parser)
 
     @cli_builder
-    def __init__(self, dataset="imagenet2012", size=None, preset=0,
-                 custom=None, name=None, **kw):
-        if custom is None:
-            _name, _size, *custom = presets[preset]
-            size = _size if size is None else size
-            name = _name if name is None else name
-        self.model = self.base(*custom, name=name)
-        super().__init__(dataset=dataset, size=size, **kw)
+    def __init__(self, dataset="imagenet2012", **kw):
+        super().__init__(dataset=dataset, **kw)
 
     def opt(self, lr):
         return MovingAverage(tf.keras.optimizers.RMSprop(lr, 0.9, 0.9, 0.001))
 
     @cli_builder
-    def build(self, **kw):
-        super().build(**kw)
+    def build(self, size=None, preset=0, custom=None, name=None, **kw):
+        if custom is None:
+            _name, _size, *custom = presets[preset]
+            size = _size if size is None else size
+            name = _name if name is None else name
+        super().build(size=size, **kw)
 
+        self.model = self.base(
+            *custom, outputs=self.outputs, pretranspose=self.tpu,
+            data_format=self.data_format, name=name)
         if self.tpu:
             self.model.base.bn = TPUBatchNorm
 
-        self.model.builder(outputs=self.outputs, pretranspose=self.tpu,
-                           data_format=self.data_format)
         self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
                      ["categorical_accuracy"])
 

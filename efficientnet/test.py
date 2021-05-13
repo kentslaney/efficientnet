@@ -36,15 +36,12 @@ class TestBorderReweight(unittest.TestCase):
     def test_long_stride(self):
         self.check((16, 16), (8, 8), (30, 20))
 
-    # removed because slow
-    def _test_random(self):
+    def test_random(self):
         tf.random.set_seed(0)
-        # tf.config.run_functions_eagerly(True)
         for i in range(100):
             inp = tf.cast(tf.random.uniform((3, 2)) * 32 + 1, tf.int32)
             inp = tuple(map(tuple, inp))
             self.check(*inp, acc=2)
-        # tf.config.run_functions_eagerly(False)
 
 class MockBorderOffset(BorderOffset):
     def __init__(self, width, *args, **kw):
@@ -63,7 +60,6 @@ class TestBorderOffset(unittest.TestCase):
             tf.ones((1,) + shape + (1,)), kernel, (1,) + stride + (1,),
             "SAME")[0, ..., 0]
         self.assertEqual(res.shape, correct.shape)
-        print(res.numpy(), correct.numpy(), sep="\n\n")
         self.assertEqual(tf.reduce_all(res == correct), True)
 
     # removed because known to double count
