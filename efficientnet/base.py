@@ -174,7 +174,6 @@ class Trainer:
                 self.learning_rate, self.length / self.batch,
                 self.decay_warmup, self.decay_factor, self.step))
 
-
 class TFDSTrainer(Trainer):
     @classmethod
     def cli(cls, parser):

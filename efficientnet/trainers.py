@@ -19,7 +19,6 @@ presets = [
     ("EfficientNet-L2", 800, 4.3, 5.3, 0.5),
 ]
 
-
 class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
     base = Classifier
 
@@ -56,10 +55,13 @@ class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
             *custom, outputs=self.outputs, pretranspose=self.tpu,
             data_format=self.data_format, name=name)
         if self.tpu:
-            self.model.base.bn = TPUBatchNorm
+            self.tpu_build()
 
         self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
                      ["categorical_accuracy"])
+
+    def tpu_build(self):
+        self.model.base.bn = TPUBatchNorm
 
 class BorderMBConv(MBConv):
     # depthwise = DepthwiseConv2D

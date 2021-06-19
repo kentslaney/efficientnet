@@ -15,8 +15,8 @@ class SimpleModel(tf.keras.Model):
         self.pool = tf.keras.layers.GlobalAveragePooling2D(data_format)
         self.dense = tf.keras.layers.Dense(outputs, activation=tf.nn.softmax)
 
-    def call(self, inputs):
-        x = self.conv0(inputs)
+    def call(self, x):
+        x = self.conv0(x)
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)

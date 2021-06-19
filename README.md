@@ -2,9 +2,7 @@
 This repo provides a clean implementation of EfficientNet.
 
 ## TODO
-- Test TPU compat
 - Stop [this](https://stackoverflow.com/a/58385932) from happening
-- Pull Border.slices into conv build while maintaining None shape option
-- Hoist start/end conv (maybe add option to drop it)
+- Test TPU compat
+- Pull out strided slice for fixed shape border convs
 - Add channels to Border
-- Fix simple

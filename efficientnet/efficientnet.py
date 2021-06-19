@@ -41,6 +41,11 @@ class Embedding(tf.keras.Model):
         for block in self.blocks:
             block.outputs = self.round_filters(block.outputs)
             block.repeats = self.round_repeats(block.repeats)
+
+        class Base(self.base):
+            pass
+        self.base = Base
+
         super().__init__(**kw)
 
     def kw(self, overall, repeat):
@@ -72,7 +77,7 @@ class Embedding(tf.keras.Model):
 
         self._stem_conv = self.conv(self.stem, 3, 2, use_bias=False)
         self._stem_bn = self.bn()
- 
+
         self._blocks, i = [], 0
         for block in self.blocks:
             for j in range(block.repeats):
