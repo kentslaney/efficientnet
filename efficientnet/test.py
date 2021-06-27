@@ -4,16 +4,18 @@ import unittest
 
 class TestBorderReweight(unittest.TestCase):
     def check(self, shape, width, stride, acc=4):
-        border = BorderReweight(width, stride)
         kernel = tf.ones(width + (1, 1)) / tf.cast(
             tf.reduce_prod(width), tf.float32)
-        res = border(tf.convert_to_tensor(shape))
         correct = 1 / tf.nn.conv2d(
             tf.ones((1,) + shape + (1,)), kernel, (1,) + stride + (1,),
             "SAME")[0, ..., 0]
-        self.assertEqual(res.shape, correct.shape)
-        diff = tf.reduce_max(res - correct)
-        self.assertAlmostEqual(diff.numpy().item(), 0, acc)
+        for fixed in (None, shape):
+            for disjoint in (False, True):
+                res = BorderReweight(
+                    2, width, stride, fixed, disjoint=disjoint)(shape)
+                self.assertEqual(res.shape, correct.shape)
+                diff = tf.reduce_max(res - correct)
+                self.assertAlmostEqual(diff.numpy().item(), 0, acc)
 
     def test_basic(self):
         self.check((16, 16), (8, 8), (1, 1))

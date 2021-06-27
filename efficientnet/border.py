@@ -1,154 +1,216 @@
 import tensorflow as tf
-from functools import partial
 from utils import Conv2D as SpecializedConv2D
 
-expand = lambda r: lambda x: (x,) * r if tf.rank(x) == 0 else x
+def nslice(rank, dim):
+    start = tuple(slice(None) for i in range(dim))
+    end = tuple(slice(None) for i in range(rank - dim - 1))
+    def inner(*args):
+        return start + (slice(*args),) + end
+    return inner
 
-class Border(tf.Module):
-    default = None
-
-    def __init__(self, width, stride=1, rank=2, disjoint=False, register=None,
-                 name=None):
+class Dimension(tf.Module):
+    def __init__(self, rank, primary, kernel, stride, size=None, channels=1,
+                 channel_axis=None, disjoint=False, register=None, name=None):
+        name = name or f"axis{primary}"
         super().__init__(name=name)
-        assert self.default is not None
-        self.rank, self.register = rank, register or tf.Variable
-        width, stride = map(expand(rank), (width, stride))
-        self.stride = tf.convert_to_tensor(stride)
-        self.sizes = tuple(((i - 1) // 2, i // 2) for i in width)
-        self.disjoint, self.cache = disjoint, None
+        self.rank, self.primary, self.kernel = rank, primary, kernel
+        self.stride, self.size, self.disjoint = stride, size, disjoint
+        self.channels, self.channel_axis = channels, channel_axis
+        self.register = register or tf.Variable
         with self.name_scope:
-            self.values = [[self.initialize(size, i, axis, disjoint, bool(end))
-                            for end, size in enumerate(self.sizes[axis])]
-                           for axis, i in enumerate(width)]
+            self.initialize()
 
-    def slices(self, shape):
-        tf.debugging.assert_equal(tf.size(shape), self.rank)
-        res = []
-        for axis in range(self.rank):
-            size, stride = shape[axis], self.stride[axis]
-            start, end = self.sizes[axis]
+    def expand(self, tensor):
+        shape = tf.ones((self.rank,), dtype=tf.int64)
+        shape = tf.tensor_scatter_nd_update(shape, [[self.primary]], [-1])
+        tensor = tf.reshape(tensor, shape)
+        if self.channel_axis is not None:
+            tensor = tf.repeat(tensor, self.channels, self.channel_axis)
+        return tensor
 
-            reps = (size + stride - 1) // stride - 1
-            pad = tf.nn.relu(reps * stride + start + end + 1 - size)
-            offset, diff = start - pad // 2, size - start - end
-            reset = (offset + end - size) % stride
-            midset = (offset - start) % stride
+    def group(self, tensor, start, prefix=False):
+        flip = slice(None, None, -1) if prefix else slice(None)
+        tensor = tf.concat((tensor, self.default((self.stride - 1,)))[flip], 0)
+        end = tf.size(tensor) - (tf.size(tensor) - start) % self.stride
+        return self.reduce(tf.reshape(tensor[start:end], (-1, self.stride)), 1)
 
-            if diff >= 0:
-                data = (0, (0, 0), (0, 0), (offset, start), (reset, end),
-                        (diff - midset - 1) // stride + 1)
-            elif tf.math.maximum(start, end) <= size:
-                data = (1, (reset + size - end, start), (reset, -diff),
-                        (offset, size - end), (midset - diff, end), 0)
+    def consolidate(self, middle, start, end, dim=None, rank=None):
+        if middle > 0:
+            return middle, start, end
+
+        dim = self.primary if dim is None else dim
+        rank = self.rank if rank is None else rank
+        empty = tf.constant([], shape=[int(i != dim) for i in range(rank)])
+        if middle == 0:
+            return 0, empty, tf.concat((start, end), dim)
+
+        idx = nslice(rank, dim)
+        over = self.overlap(start[idx(middle, None)], end[idx(-middle)])
+        return 0, empty, tf.concat(
+            (start[idx(middle)], over, end[idx(-middle, None)]), dim)
+
+    def pad(self, size):
+        pad = tf.nn.relu(self.kernel - 1 - ((size - 1) % self.stride))
+        start = (self.kernel - 1) // 2 - pad // 2
+        end = (pad - 1) // 2 % self.stride
+        return -(-size // self.stride), start, end
+
+    def initialize(self, start, end):
+        if self.size is not None:
+            out, ss, es = self.pad(self.size)
+            if self.disjoint:
+                start, end = start[ss::self.stride], end[es::self.stride]
+                start, end = start[:out], end[-out:]
             else:
-                data = (2, (offset, size), (offset + end - size, end),
-                        (0, 0), (0, 0), 0)
+                start, end = self.group(start, ss), self.group(end, es, True)
+                if tf.size(end) > out:
+                    over = tf.size(end) - out + 1
+                    end = tf.concat(([self.reduce(end[:over])], end[over:]), 0)
+                    if tf.size(start) > out:
+                        edge = self.reduce(start[out - 1:])
+                        start = tf.concat((start[:out - 1], [edge]), 0)
 
-            res.append(tuple(slice(*i, stride) if type(i) is tuple else i
-                             for i in data))
-        return tuple(res)
+            self.middle = out - tf.size(start) - tf.size(end)
+            if self.disjoint:
+                self.middle, start, end = self.consolidate(
+                    self.middle, start, end, 0, 1)
 
-    def set_shape(self, shape):
-        self.cache = self.slices(shape)
+        self.start, self.end = self.expand(start), self.expand(end)
+        if tf.size(start) > 0:
+            self.start = self.register(self.start, name="start")
+        if tf.size(end) > 0:
+            self.end = self.register(self.end, name="end")
 
-    def __call__(self, shape=None):
-        assert self.cache is not None or shape is not None
-        return self.build(self.cache or self.slices(shape))
+    def __call__(self, size=None):
+        if self.size is None:
+            assert size is not None
+            if self.disjoint:
+                start, end = self.start, self.end
+            else:
+                start = self.conv(self.start, True)
+                end = self.conv(self.end, False)
 
-    def build(self, bounds, axis=0, sides=(), expand=()):
-        if axis == self.rank:
-            if not sides:
-                return self.default(list(zip(*expand))[1])
+            out, ss, es = self.pad(size)
+            idx = nslice(self.rank, self.primary)
+            start = start[idx(ss, None, self.stride)]
+            end = end[idx(es, None, self.stride)]
+            start, end = start[idx(out)], end[idx(-out, None)]
+            return self.consolidate(out - tf.shape(start)[self.primary] -
+                                    tf.shape(end)[self.primary], start, end)
+        elif self.disjoint:
+            return self.middle, self.start, self.end
+        return self.consolidate(self.middle, self.conv(self.start, True),
+                                self.conv(self.end, False))
 
-            sides = tf.meshgrid(*sides, indexing="ij")
-            res = sides[0]
-            for side in sides[1:]:
-                res = self.compose(res, side)
-            for axis, repeats in expand:
-                res = tf.repeat(tf.expand_dims(res, axis), repeats, axis)
-            return res
+class Reweight(Dimension):
+    def initialize(self):
+        res = tf.range((self.kernel + 1) // 2, self.kernel, dtype=tf.float32)
+        res = tf.cast(self.kernel, tf.float32) / res if self.disjoint \
+            else (res + 1) / res
+        super().initialize(res[(self.kernel + 1) % 2:], res[::-1])
 
-        if self.disjoint:
-            start, end = self.values[axis]
-        else:
-            start = self.conv(self.values[axis][0], True)
-            end = self.conv(self.values[axis][1], False)
-        builder, bound = partial(self.build, bounds, axis + 1), bounds[axis]
-        if bound[0] == 0:
-            built = builder(sides, expand + ((axis, bound[5]),))
-            built = built if bound[3].start >= bound[3].stop else tf.concat((
-                builder(sides + (start[bound[3]],), expand), built), axis)
-            return built if bound[4].start >= bound[4].stop else tf.concat((
-                built, builder(sides + (end[bound[4]],), expand)), axis)
-        else:
-            data = self.overlap(start[bound[1]], end[bound[2]])
-            if bound[0] == 1:
-                data = tf.concat((start[bound[3]], data, end[bound[4]]), 0)
-            return builder(sides + (data,), expand)
+    def conv(self, x, reverse):
+        if tf.size(x) == 0:
+            return x
 
-    def initialize(self, size, width, axis, end):
-        raise NotImplementedError()
-
-    @classmethod
-    def conv(_, x, reverse):
-        raise NotImplementedError()
-
-    @classmethod
-    def compose(_, a, b):
-        raise NotImplementedError()
-
-    @classmethod
-    def overlap(_, a, b):
-        raise NotImplementedError()
-
-class BorderReweight(Border):
-    def initialize(self, size, width, axis, disjoint, end):
-        name = f"border_reweight_axis{axis}_{'end' if end else 'start'}"
-        res = tf.range(width - size, width)[::-1 if end else 1]
-        res = tf.cast(width / res if disjoint else (res + 1) / res, tf.float32)
-        return self.register(res, name=name)
+        return tf.math.cumprod(x, self.primary, reverse=reverse)
 
     @classmethod
     def default(cls, *args, **kw):
         return tf.ones(*args, **kw)
 
     @classmethod
-    def conv(cls, x, reverse):
-        return tf.math.cumprod(x, reverse=reverse)
-
-    @classmethod
-    def compose(_, a, b):
+    def compose(cls, a, b):
         return a * b
 
     @classmethod
-    def overlap(_, a, b):
+    def overlap(cls, a, b):
         return a * b / (a + b - a * b)
 
-# double counts the corners, which is unavoidable with O(n) parameters for an
-# n by n kernel
-# Proof: if you conv a kernel with ones, you can recover all the kernel weights
-# by subtracting adjacent values towards the relevant corner therefore you need
-# O(n^2) information to supplement the lost corners
-class BorderOffset(Border):
-    def initialize(self, size, width, axis, disjoint, end):
-        name = f"border_bias_axis{axis}_{'end' if end else 'start'}"
-        return self.register(tf.zeros((size,)), name=name)
+    @classmethod
+    def reduce(cls, *args, **kwargs):
+        return tf.math.reduce_prod(*args, **kwargs)
+
+class Offset(Dimension):
+    def initialize(self):
+        start = tf.zeros(((self.kernel - 1) // 2,))
+        end = tf.zeros((self.kernel // 2,))
+        super().initialize(start, end)
+
+    def conv(self, x, reverse):
+        if tf.size(x) == 0:
+            return x
+
+        return tf.math.cumsum(x, self.primary, reverse=reverse)
 
     @classmethod
     def default(cls, *args, **kw):
         return tf.zeros(*args, **kw)
 
     @classmethod
-    def conv(cls, x, reverse):
-        return tf.math.cumsum(x, reverse=reverse)
-
-    @classmethod
-    def compose(_, a, b):
+    def compose(cls, a, b):
         return a + b
 
     @classmethod
-    def overlap(_, a, b):
+    def overlap(cls, a, b):
         return a + b
+
+    @classmethod
+    def reduce(cls, *args, **kwargs):
+        return tf.math.reduce_sum(*args, **kwargs)
+
+class Border(tf.Module):
+    def __init__(self, rank, kernel, stride, size=None, empty=(), channels=1,
+                 channel_axis=None, disjoint=False, register=None, name=None):
+        super().__init__(name=name)
+        self.rank = rank
+        size = (None,) * rank if size is None else size
+        empty = tuple(rank + i if i < 0 else i for i in empty)
+        channel_axis = rank + channel_axis if channel_axis is not None \
+            and channel_axis < 0 else channel_axis
+        self.channels, self.channel_axis = channels, channel_axis
+        ax = [i for i in range(rank) if i not in empty and i != channel_axis]
+        with self.name_scope:
+            self.ax = tuple(self.base(
+                rank, dim, kernel[i], stride[i], size[dim], channels,
+                channel_axis, disjoint, register) for i, dim in enumerate(ax))
+
+    def __call__(self, size=None):
+        ax = [ax(None if size is None else size[ax.primary]) for ax in self.ax]
+        def build(idx=0, sides=(), expand=()):
+            if idx == len(self.ax):
+                if not sides:
+                    shape = [1] * self.rank
+                    if self.channel_axis is not None:
+                        shape[self.channel_axis] = self.channels
+                    for i, val in expand:
+                        shape[i] = val
+                    return self.base.default(shape)
+
+                res = sides[0]
+                for side in sides[1:]:
+                    res = self.base.compose(res, side)
+                for axis, repeats in expand:
+                    res = tf.repeat(res, repeats, axis)
+                return res
+
+            middle, start, end = ax[idx]
+            if middle == 0:
+                return build(idx + 1, sides + (end,), expand)
+            else:
+                dim = self.ax[idx].primary
+                res = build(idx + 1, sides, expand + ((dim, middle),))
+                res = res if tf.size(start) == 0 else tf.concat(
+                    (build(idx + 1, sides + (start,), expand), res), dim)
+                return res if tf.size(end) == 0 else tf.concat(
+                    (res, build(idx + 1, sides + (end,), expand)), dim)
+        return build()
+
+class BorderReweight(Border):
+    base = Reweight
+
+class BorderOffset(Border):
+    base = Offset
 
 class BorderConv:
     def __init__(self, *args, activation=None, disjoint=False, **kw):
@@ -157,44 +219,27 @@ class BorderConv:
             i == 1 for i in self.dilation_rate)
         self.disjoint = disjoint
         self.small = bool(tf.reduce_all(self.kernel_size == tf.constant(1)))
-        self.spacial = slice(2, None) if self._channels_first else slice(1, -1)
         self._activation = tf.keras.activations.get(activation)
         if self._activation is None:
             self._activation = lambda x: x
 
     def build(self, input_shape):
         super().build(input_shape)
-        if self.small:
-            return
-
-        self.border_weight = BorderReweight(
-            self.kernel_size, self.strides, self.rank, self.disjoint)
-        self._border_weight_values = self.border_weight.values
-
-        if self.use_bias:
-            self.border_bias = BorderOffset(
-                self.kernel_size, self.strides, self.rank, self.disjoint)
-            self._border_bias_values = self.border_bias.values
-
-        input_shape = input_shape[self.spacial]
-        if None not in input_shape:
-            self.border_weight.set_shape(input_shape)
-            self.border_bias.set_shape(input_shape)
-
-    def builder(self, shape):
-        weight = tf.expand_dims(self.border_weight(
-            shape)[tf.newaxis, ...], self._get_channel_axis())
-        bias = 0. if not self.use_bias else tf.expand_dims(
-            self.border_bias(shape)[tf.newaxis, ...], self._get_channel_axis())
-        return weight, bias
+        if not self.small:
+            channel_axis, zeroed = self._get_channel_axis(), (lambda _: 0.)
+            self.border_weight = BorderReweight(
+                self.rank + 2, self.kernel_size, self.strides, input_shape,
+                (0,), self.filters, channel_axis, self.disjoint)
+            self.border_bias = zeroed if not self.use_bias else BorderOffset(
+                self.rank + 2, self.kernel_size, self.strides, input_shape,
+                (0,), self.filters, channel_axis, self.disjoint)
 
     def call(self, inputs):
         res = super().call(inputs)
-        if self.small:
-            return self._activation(res)
-
-        weight, bias = self.builder(tf.shape(inputs)[self.spacial])
-        return self._activation(weight * res + bias)
+        if not self.small:
+            shape = tf.shape(inputs)
+            res = self.border_weight(shape) * res + self.border_bias(shape)
+        return self._activation(res)
 
 class Conv1D(BorderConv, tf.keras.layers.Conv1D):
     pass

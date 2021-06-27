@@ -218,13 +218,14 @@ class Sharpness(Blended):
         kernel /= tf.reduce_sum(kernel)
         self.kernel = tf.tile(kernel, [1, 1, 3, 1])
         self.reweight = BorderReweight(
-            self.size, register=lambda x, *a, **k: tf.Variable(x, False))
+            4, (self.size, self.size), (1, 1), empty=(0, 3), disjoint=True,
+            register=lambda x, name: tf.constant(x))
 
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
         res = tf.nn.depthwise_conv2d(
             im[tf.newaxis, ...], self.kernel, [1, 1, 1, 1], "SAME")
-        res *= self.reweight(tf.shape(im)[:-1])[tf.newaxis, ..., tf.newaxis]
+        res *= self.reweight(tf.shape(res))
         return m, res[0]
 
 class Contrast(Augmentation):
