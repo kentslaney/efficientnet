@@ -222,9 +222,7 @@ class TFDSTrainer(Trainer):
             tfds.core.constants.DATA_DIR if data_dir is None else data_dir)
         data_base = os.path.join(data_dir, "downloads", "manual")
         downloader = tfds.download.DownloadManager(download_dir=data_base)
-        # https://archive.is/0Q3LX#selection-13351.0-13351.32
-        key = "dd31405981ef5f776aa17412e1f0c112"
-        url_base = f"http://image-net.org/challenges/LSVRC/2012/{key}/"
+        url_base = f"https://image-net.org/data/ILSVRC/2012/"
         files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
         paths = [tfds.download.Resource(path=os.path.join(
             data_base, fname), url=url_base + fname) for fname in files]
