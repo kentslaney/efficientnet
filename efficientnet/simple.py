@@ -25,7 +25,8 @@ class SimpleModel(tf.keras.Model):
 class SimpleTrainer(RandAugmentTrainer, TFDSTrainer):
     @classmethod
     def cli(cls, parser):
-        parser.add_argument("--border-conv", action="store_true")
+        parser.add_argument("--border-conv", action="store_true", help=(
+            "use border aware convolutions"))
         super().cli(parser)
 
     @cli_builder

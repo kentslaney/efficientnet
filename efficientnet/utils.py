@@ -27,27 +27,13 @@ def cli_builder(f):
     return wrapper
 
 class ArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, **kw):
-        kw = {
-            "formatter_class": HelpFormatter,
-            "argument_default": Default,
-            **kw
-        }
-        super().__init__(*args, **kw)
-        kw["add_help"] = False
-        self._group, self.copy = None, lambda: self.__class__(*args, **kw)
-
-    @property
-    def group(self):
-        if self._group is None:
-            self._group = self.copy()
-        return self._group
+    def __init__(self, *args, formatter_class=HelpFormatter,
+                 argument_default=Default, **kw):
+        super().__init__(*args, formatter_class=formatter_class,
+                         argument_default=argument_default, **kw)
 
     def parse_known_args(self, args=None, namespace=None):
         res, args = super().parse_known_args(args, namespace)
-        if self._group is not None:
-            res, args = self._group.parse_known_args(args, res)
-        self._group = None
 
         if hasattr(res, "call"):
             res.caller = partial(res.call, **{i: j for i, j in vars(
