@@ -27,13 +27,11 @@ class Trainer:
         parser.add_argument(
             "--lr", dest="learning_rate", type=float, help=(
                 "model learning rate per example per batch"))
-
-        group = parser.add_mutually_exclusive_group(required=False)
-        group.add_argument("--no-decay", dest="decay", action="store_false",
+        parser.add_argument("--no-decay", dest="decay", action="store_false",
                             help="don't decay the learning rate")
-        group.add_argument("--decay-warmup", type=int, help=(
+        parser.add_argument("--decay-warmup", type=int, help=(
             "number of epochs to warm up learning rate"))
-        group.add_argument("--decay-factor", type=float, help=(
+        parser.add_argument("--decay-factor", type=float, help=(
             "lr decay per epoch after warmup"))
 
         group = parser.add_mutually_exclusive_group(required=False)

@@ -158,7 +158,8 @@ class WarmedExponential(tf.keras.callbacks.Callback):
     def __init__(self, scale, units, warmup, decay, step=None, freq=128):
         self.scale, self.units, self.warmup, self.decay, self.freq = scale, \
             units, warmup, decay, freq
-        self.step = step or tf.Variable(0, dtype=tf.int32, name="step")
+        self.step = tf.Variable(0, dtype=tf.int32, name="step") \
+            if step is None else step
 
     def on_train_batch_begin(self, batch, logs=None):
         self.step.assign_add(1)
