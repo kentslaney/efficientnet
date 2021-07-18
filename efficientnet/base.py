@@ -213,7 +213,8 @@ class TFDSTrainer(Trainer):
 
     @classmethod
     def builder(cls, dataset, data_dir):
-        if hasattr(cls, "_tfds_" + dataset):
+        if hasattr(cls, "_tfds_" + dataset) and not tf.io.gfile.exists(
+                tfds.builder(dataset, data_dir=data_dir).data_path):
             getattr(cls, "_tfds_" + dataset)(data_dir)
 
     @classmethod

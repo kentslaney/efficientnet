@@ -57,7 +57,7 @@ class EfficientnetTrainer(RandAugmentTrainer, TFDSTrainer):
         if self.tpu:
             self.tpu_build()
 
-        self.compile(tf.keras.losses.CategoricalCrossentropy(True, 0.1),
+        self.compile(tf.keras.losses.CategoricalCrossentropy(False, 0.1),
                      ["categorical_accuracy"])
 
     def tpu_build(self):

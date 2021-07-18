@@ -1,4 +1,4 @@
-import os, sys, unittest
+import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
@@ -71,8 +71,7 @@ def download_cli(parser):
         "default directory for TFDS data, supports GCS buckets"))
     parser.set_defaults(call=download)
 
-if __name__ == "__main__":
-    parser = ArgumentParser()
+def main(parser):
     subparsers = parser.add_subparsers()
     train_cli(subparsers.add_parser("train", help="Train a network"))
     preview_cli(subparsers.add_parser("preview", help=(
@@ -81,3 +80,6 @@ if __name__ == "__main__":
     parser.set_defaults(call=helper(parser))
 
     parser.parse_args().caller()
+
+if __name__ == "__main__":
+    main(ArgumentParser())

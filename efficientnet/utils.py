@@ -26,7 +26,7 @@ def cli_builder(f):
         return f(*args, **kw)
     return wrapper
 
-class ArgumentParser(argparse.ArgumentParser):
+class CallParser:
     def __init__(self, *args, formatter_class=HelpFormatter,
                  argument_default=Default, **kw):
         super().__init__(*args, formatter_class=formatter_class,
@@ -39,6 +39,9 @@ class ArgumentParser(argparse.ArgumentParser):
             res.caller = partial(res.call, **{i: j for i, j in vars(
                 res).items() if i not in ("call", "caller")})
         return res, args
+
+class ArgumentParser(CallParser, argparse.ArgumentParser):
+    pass
 
 relpath = lambda *args: os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir, *args))
