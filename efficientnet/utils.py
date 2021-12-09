@@ -1,5 +1,5 @@
 import tensorflow as tf
-import argparse, os
+import argparse, os, gc
 from functools import partial, wraps
 from datetime import datetime
 from inspect import signature
@@ -188,3 +188,8 @@ class Checkpointer(tf.keras.callbacks.Callback):
         path = tf.train.latest_checkpoint(base)
         self.ckpt.restore(path)
         return path
+
+class GarbageCollector(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        tf.keras.backend.clear_session()
+        gc.collect()

@@ -29,18 +29,14 @@ class SimpleTrainer(RandAugmentTrainer, TFDSTrainer):
             "use border aware convolutions"))
         super().cli(parser)
 
-    @cli_builder
-    def __init__(self, learning_rate=1e-6, decay=False, augment=False,
-                 dataset="mnist", **kw):
-        super().__init__(learning_rate=learning_rate, decay=decay,
-                         augment=augment, dataset=dataset, **kw)
-
     def opt(self, lr):
         return tf.keras.optimizers.Adam(lr)
 
     @cli_builder
-    def build(self, border_conv=False, size=32, **kw):
-        super().build(size=size, **kw)
+    def __init__(self, learning_rate=1e-6, decay=False, augment=False,
+                 dataset="mnist", border_conv=False, size=32, **kw):
+        super().__init__(learning_rate=learning_rate, decay=decay,
+                         augment=augment, dataset=dataset, size=size, **kw)
 
         conv = BorderConv2D if border_conv else Conv2D
         self.model = SimpleModel(self.outputs, self.data_format, conv)

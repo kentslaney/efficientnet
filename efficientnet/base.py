@@ -3,16 +3,19 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
-    PresetFlag, cli_builder, relpath, Checkpointer
+    PresetFlag, cli_builder, relpath, Checkpointer, GarbageCollector
 )
 from preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
 )
 
 class Trainer:
-    path, _format, checkpoint, length = None, None, None, None
+    path, _format, length = None, None, None
+    tb_callback, ckpt_callback = LRTensorBoard, Checkpointer
     opt = tf.keras.optimizers.Adam
 
+    # creates the CLI interface; arguments are passed to init and default to
+    # the function defaults by passing the Default flag to cli_builder
     @classmethod
     def cli(cls, parser):
         parser.add_argument("--id", dest="suffix", help=(
@@ -75,19 +78,16 @@ class Trainer:
 
         parser.set_defaults(call=cls.train)
 
-    @classmethod
-    def train(cls, **kw):
-        cls(**kw).fit()
-
+    # see the CLI help for a complete list of parameters
     @cli_builder
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None, **kw):
+                 resume=None):
         self.batch, self.learning_rate = batch, learning_rate
-        self.data_format, self.epochs = data_format, epochs
+        self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
-        self.should_decay, self.callbacks = decay, []
+        self.should_decay, self.callbacks = decay, [GarbageCollector()]
         self.step = tf.Variable(0, dtype=tf.int32, name="step")
         self.epoch = tf.Variable(0, dtype=tf.int32, name="epoch")
 
@@ -97,8 +97,13 @@ class Trainer:
         elif base is not None:
             self.path = os.path.join(base, suffix.format(time=strftime()))
 
-        self.build(**kw)
+        if self.should_decay:
+            assert self.length is not None
+            self.callbacks.append(WarmedExponential(
+                self.learning_rate, self.length / self.batch,
+                self.decay_warmup, self.decay_factor, self.step))
 
+    # decides default data format based on device
     @property
     def data_format(self):
         if self._format is None:
@@ -107,10 +112,8 @@ class Trainer:
                 else "channels_first"
         return self._format
 
-    @data_format.setter
-    def data_format(self, value):
-        self._format = value
-
+    # sets the tf distribute strategy and adjusts the optimizer and batch size
+    # accordingly
     def distribute(self, strategy, tpu=False):
         self.strategy, self.tpu = strategy, tpu
         if tf.distribute.in_cross_replica_context():
@@ -119,9 +122,11 @@ class Trainer:
         self.opt = self.opt(self.learning_rate)
         self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
 
+    # given a preprocessing function, sets the behavior for how to apply it
     def mapper(self, f):
         return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
 
+    # batches and preprocesses to train and optionally validation sets
     def preprocess(self, train, validation=None):
         tune = tf.data.experimental.AUTOTUNE
         options = tf.data.Options()
@@ -129,7 +134,7 @@ class Trainer:
         if self.tpu:
             train, validation = map(tpu_prep, (train, validation))
 
-        self.dataset = self.dataset.shuffle(self.batch * 4).map(
+        self.dataset = self.dataset.shuffle(self.batch * 8).map(
             self.mapper(train), tune).batch(self.batch, True).prefetch(
                 tune).with_options(options)
 
@@ -138,39 +143,43 @@ class Trainer:
                 validation), tune).batch(self.batch, True).prefetch(
                     tune).with_options(options)
 
-    def checkpoint(self):
+    # sets up the checkpoint and logging directories and adds callbacks for
+    # self.ckpt_callback and self.tb_callback
+    def register(self):
         if self.path is None:
             return
 
+        # create ckpts and logs directories inside self.path
         ckpts, logs = (os.path.join(self.path, i) for i in ("ckpts", "logs"))
         tf.io.gfile.makedirs(ckpts)
 
-        ckptr = Checkpointer(os.path.join(ckpts, "ckpt"), self.epoch,
-                             self.model, opt=self.opt, step=self.step)
+        ckptr = self.ckpt_callback(os.path.join(ckpts, "ckpt"), self.epoch,
+                                   self.model, opt=self.opt, step=self.step)
+        # load latest if there are already checkpoints
         if tf.io.gfile.listdir(ckpts):
             path = ckptr.restore(ckpts)
             print(f"Loading model from checkpoint {path}")
         else:
             print(f'Writing to training directory {self.path}')
 
-        self.callbacks += [LRTensorBoard(logs, update_freq=64), ckptr]
+        self.callbacks += [self.tb_callback(logs, update_freq=64), ckptr]
 
+    # calls outputs and compiles the model using self.opt
     def compile(self, *args, **kw):
-        self.checkpoint()
+        self.register()
         self.model.compile(self.opt, *args, **kw)
 
+    # creates a class instance using the input keywords and starts training
+    @classmethod
+    def train(cls, **kw):
+        cls(**kw).fit()
+
+    # calls the keras model class' fit function using the appropiate properties
     def fit(self):
         self.model.fit(
             self.dataset, validation_data=self.validation, epochs=self.epochs,
             callbacks=self.callbacks, batch_size=self.batch,
             initial_epoch=self.epoch.numpy().item())
-
-    def build(self):
-        if self.should_decay:
-            assert self.length is not None
-            self.callbacks.append(WarmedExponential(
-                self.learning_rate, self.length / self.batch,
-                self.decay_warmup, self.decay_factor, self.step))
 
 class TFDSTrainer(Trainer):
     @classmethod
@@ -190,8 +199,9 @@ class TFDSTrainer(Trainer):
                 "split"))
         super().cli(parser)
 
+    # TODO: train test and validation are the only labels
     @cli_builder
-    def build(self, dataset, holdout=None, data_dir=None, **kw):
+    def __init__(self, dataset, holdout=None, data_dir=None, **kw):
         self.builder(dataset, data_dir)
         data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
                                shuffle_files=True, as_supervised=True)
@@ -207,7 +217,7 @@ class TFDSTrainer(Trainer):
         self.dataset, self.validation = data
         self.outputs = info.features["label"].num_classes
         self.length = sum(sizes[:len(sizes) + hold + 1])
-        super().build(**kw)
+        super().__init__(**kw)
 
     @classmethod
     def builder(cls, dataset, data_dir):
@@ -244,8 +254,8 @@ class RandAugmentTrainer(Trainer):
         super().cli(parser)
 
     @cli_builder
-    def build(self, size=None, augment=True, pad=False, **kw):
-        super().build(**kw)
+    def __init__(self, size=None, augment=True, pad=False, **kw):
+        super().__init__(**kw)
         self.size = (size, size) if type(size) == int else size
         self.augment, self.pad = augment, pad
         train = PrepStretched if not self.augment else \
