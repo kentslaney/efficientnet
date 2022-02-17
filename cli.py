@@ -1,11 +1,11 @@
-import os
+import sys, os, unittest
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from preprocessing import RandAugmentCropped, RandAugmentPadded
-from utils import strftime, helper, ArgumentParser, cli_builder
-from base import RandAugmentTrainer, TFDSTrainer
-from trainers import cli_names
+from efficientnet.preprocessing import RandAugmentCropped, RandAugmentPadded
+from efficientnet.utils import strftime, helper, ArgumentParser, cli_builder
+from efficientnet.base import TFDSTrainer
+from efficientnet.trainers import cli_names
 
 tf.config.optimizer.set_jit(True)
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
@@ -71,12 +71,18 @@ def download_cli(parser):
         "default directory for TFDS data, supports GCS buckets"))
     parser.set_defaults(call=download)
 
+def test():
+    runner = unittest.TextTestResult(sys.stderr, True, 1)
+    unittest.defaultTestLoader.discover(".").run(runner)
+    print()
+
 def main(parser):
     subparsers = parser.add_subparsers()
     train_cli(subparsers.add_parser("train", help="Train a network"))
     preview_cli(subparsers.add_parser("preview", help=(
         "Preview an augmented dataset")))
     download_cli(subparsers.add_parser("download", help="Download a dataset"))
+    subparsers.add_parser("test", help="run tests").set_defaults(call=test)
     parser.set_defaults(call=helper(parser))
 
     parser.parse_args().caller()

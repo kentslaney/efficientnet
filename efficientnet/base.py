@@ -1,16 +1,16 @@
 import os
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from utils import (
+from .utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
     PresetFlag, cli_builder, relpath, Checkpointer, GarbageCollector
 )
-from preprocessing import (
+from .preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
 )
 
 class Trainer:
-    path, _format, length = None, None, None
+    path, _format, length, validation = None, None, None, None
     tb_callback, ckpt_callback = LRTensorBoard, Checkpointer
     opt = tf.keras.optimizers.Adam
 

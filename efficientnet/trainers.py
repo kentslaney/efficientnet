@@ -1,11 +1,11 @@
 import tensorflow as tf
 from tensorflow_addons.optimizers import MovingAverage
-from efficientnet import Classifier, Embedding
-from base import RandAugmentTrainer, TFDSTrainer
-from utils import TPUBatchNormalization, RequiredLength, cli_builder
-from border import Conv2D, DepthwiseConv2D
-from mbconv import MBConv
-from simple import SimpleTrainer
+from .efficientnet import Classifier, Embedding
+from .base import RandAugmentTrainer, TFDSTrainer
+from .utils import TPUBatchNormalization, RequiredLength, cli_builder
+from .border import Conv2D, DepthwiseConv2D
+from .mbconv import MBConv
+from .simple import SimpleTrainer
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),

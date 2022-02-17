@@ -1,6 +1,6 @@
 import tensorflow as tf
 from functools import partial
-from mbconv import MBConv
+from .mbconv import MBConv
 from math import ceil
 
 class Block:
@@ -62,7 +62,7 @@ class Embedding(tf.keras.Model):
         rounded = max(self.divisor, rounded)
 
         if rounded < 0.9 * filters:
-            rounded += depth_divisor
+            rounded += self.divisor
         return int(rounded)
 
     def round_repeats(self, repeats):

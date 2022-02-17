@@ -2,7 +2,7 @@ import tensorflow as tf
 from collections import defaultdict
 from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
-from border import BorderReweight
+from .border import BorderReweight
 from tensorflow_addons.image import transform
 import tensorflow_probability as tfp
 from math import radians

@@ -1,5 +1,5 @@
 from cli import main
-from utils import CallParser
+from efficientnet.utils import CallParser
 from absl.flags import argparse_flags
 
 class ArgumentParser(CallParser, argparse_flags.ArgumentParser):

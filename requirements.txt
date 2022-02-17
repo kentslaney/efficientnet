@@ -1,0 +1,5 @@
+tensorflow
+tensorflow-addons
+tensorflow-datasets
+tensorflow-probability
+matplotlib
