@@ -74,7 +74,7 @@ def RequiredLength(minimum, maximum):
         def format_meta(self, metavars):
             metavars = metavars(maximum)
             formatted = ' %s' * minimum + ' [%s' * (maximum - minimum) \
-                + ']' * maximum
+                + ']' * minimum
             return formatted[1:] % metavars
 
     return RequiredLength
@@ -155,7 +155,7 @@ class Conv2D(tf.keras.layers.Conv2D):
         return res
 
 class WarmedExponential(tf.keras.callbacks.Callback):
-    def __init__(self, scale, units, warmup, decay, step=None, freq=128):
+    def __init__(self, scale, units, warmup, decay, step=None, freq=64):
         self.scale, self.units, self.warmup, self.decay, self.freq = scale, \
             units, warmup, decay, freq
         self.step = tf.Variable(0, dtype=tf.int32, name="step") \
@@ -188,8 +188,3 @@ class Checkpointer(tf.keras.callbacks.Callback):
         path = tf.train.latest_checkpoint(base)
         self.ckpt.restore(path)
         return path
-
-class GarbageCollector(tf.keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        tf.keras.backend.clear_session()
-        gc.collect()

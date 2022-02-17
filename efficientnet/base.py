@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from .utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
-    PresetFlag, cli_builder, relpath, Checkpointer, GarbageCollector
+    PresetFlag, cli_builder, relpath, Checkpointer, RequiredLength
 )
 from .preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
@@ -36,6 +36,8 @@ class Trainer:
             "number of epochs to warm up learning rate"))
         parser.add_argument("--decay-factor", type=float, help=(
             "lr decay per epoch after warmup"))
+        parser.add_argument("--profile", type=int, action=RequiredLength(1, 2),
+                            metavar="N", help="batches to profile")
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument(
@@ -83,13 +85,14 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None):
+                 resume=None, profile=(0,)):
         self.batch, self.learning_rate = batch, learning_rate
         self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
-        self.should_decay, self.callbacks = decay, [GarbageCollector()]
+        self.should_decay, self.callbacks = decay, []
         self.step = tf.Variable(0, dtype=tf.int32, name="step")
         self.epoch = tf.Variable(0, dtype=tf.int32, name="epoch")
+        self.profile = profile[0] if len(profile) == 1 else tuple(profile)
 
         self.distribute(*parse_strategy(distribute))
         if resume is not None:
@@ -162,7 +165,8 @@ class Trainer:
         else:
             print(f'Writing to training directory {self.path}')
 
-        self.callbacks += [self.tb_callback(logs, update_freq=64), ckptr]
+        self.callbacks += [self.tb_callback(
+            logs, update_freq=64, profile_batch=self.profile), ckptr]
 
     # calls outputs and compiles the model using self.opt
     def compile(self, *args, **kw):
@@ -231,7 +235,7 @@ class TFDSTrainer(Trainer):
             tfds.core.constants.DATA_DIR if data_dir is None else data_dir)
         data_base = os.path.join(data_dir, "downloads", "manual")
         downloader = tfds.download.DownloadManager(download_dir=data_base)
-        url_base = f"https://image-net.org/data/ILSVRC/2012/"
+        url_base = "https://image-net.org/data/ILSVRC/2012/"
         files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
         paths = [tfds.download.Resource(path=os.path.join(
             data_base, fname), url=url_base + fname) for fname in files]
