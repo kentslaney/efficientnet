@@ -3,7 +3,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from efficientnet.preprocessing import RandAugmentCropped, RandAugmentPadded
-from efficientnet.utils import strftime, helper, ArgumentParser, cli_builder
+from efficientnet.utils import (
+    strftime, helper, ArgumentParser, cli_builder, relpath)
 from efficientnet.base import TFDSTrainer
 from efficientnet.trainers import cli_names
 
@@ -73,7 +74,7 @@ def download_cli(parser):
 
 def test():
     runner = unittest.TextTestResult(sys.stderr, True, 1)
-    unittest.defaultTestLoader.discover(".").run(runner)
+    unittest.defaultTestLoader.discover(relpath()).run(runner)
     print()
 
 def main(parser):
