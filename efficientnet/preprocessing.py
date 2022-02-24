@@ -2,7 +2,6 @@ import tensorflow as tf
 from collections import defaultdict
 from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
-from .border import BorderReweight
 from tensorflow_addons.image import transform
 import tensorflow_probability as tfp
 from math import radians
@@ -217,15 +216,11 @@ class Sharpness(Blended):
             kernel, [[self.size // 2, self.size // 2, 0, 0]], [self.center])
         kernel /= tf.reduce_sum(kernel)
         self.kernel = tf.tile(kernel, [1, 1, 3, 1])
-        self.reweight = BorderReweight(
-            4, (self.size, self.size), (1, 1), empty=(0, 3), disjoint=True,
-            register=lambda x, name: tf.constant(x))
 
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
         res = tf.nn.depthwise_conv2d(
             im[tf.newaxis, ...], self.kernel, [1, 1, 1, 1], "SAME")
-        res *= self.reweight(tf.shape(res))
         return m, res[0]
 
 class Contrast(Augmentation):
