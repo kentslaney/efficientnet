@@ -1,6 +1,6 @@
 import tensorflow as tf
 from functools import partial
-from .mbconv import MBConv
+from src.mbconv import MBConv
 from math import ceil
 
 class Block:

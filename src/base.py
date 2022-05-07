@@ -1,11 +1,11 @@
 import os
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from .utils import (
+from src.utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
     PresetFlag, cli_builder, relpath, Checkpointer, RequiredLength
 )
-from .preprocessing import (
+from src.preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
 )
 

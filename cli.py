@@ -2,11 +2,11 @@ import sys, os, unittest
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from efficientnet.preprocessing import RandAugmentCropped, RandAugmentPadded
-from efficientnet.utils import (
+from src.preprocessing import RandAugmentCropped, RandAugmentPadded
+from src.utils import (
     strftime, helper, ArgumentParser, cli_builder, relpath)
-from efficientnet.base import TFDSTrainer
-from efficientnet.trainers import cli_names
+from src.base import TFDSTrainer
+from src.trainers import cli_names
 
 tf.config.optimizer.set_jit(True)
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
