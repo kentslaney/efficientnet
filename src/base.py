@@ -182,8 +182,7 @@ class Trainer:
     def fit(self):
         self.model.fit(
             self.dataset, validation_data=self.validation, epochs=self.epochs,
-            callbacks=self.callbacks, batch_size=self.batch,
-            initial_epoch=self.epoch.numpy().item())
+            callbacks=self.callbacks, initial_epoch=self.epoch.numpy().item())
 
 class TFDSTrainer(Trainer):
     @classmethod
