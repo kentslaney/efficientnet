@@ -155,6 +155,9 @@ class Augmentation:
         for i, j in zip(self.track, value):
             setattr(self, i, j)
 
+    def recall(self, mask):
+        return mask
+
 class Pipeline:
     def __call__(self, im):
         for op in self.ops:
@@ -275,18 +278,27 @@ class Cutout(Augmentation):
         self.cutout_center = tf.zeros((2,))
         super().__init__(*args, **kw)
 
-    @normalize((0, 0.6))
-    def call(self, im, value):
+    def caller(self, cls, im, m):
         self.cutout_center = tf.random.uniform((2,))
+        return cls.call(self, im, m)
+
+    @normalize((0, 0.6))
+    def call(self, im, m):
         shape = tf.shape(im)[:-1]
         shapef = tf.cast(shape, tf.float32)
-        value = tf.cast(shapef * value // 2, tf.int32)
+        value = tf.cast(shapef * m // 2, tf.int32)
         center = tf.cast(self.cutout_center * shapef, tf.int32)
         bounds = tf.math.maximum([center - value, center + value], 0)
         bounds = tf.math.minimum(bounds, [shape - 1])
         padding = tf.transpose([[1], [-1]] * (bounds - [[0, 0], shape]))
         mask = tf.pad(tf.ones(bounds[1] - bounds[0]), padding)[..., tf.newaxis]
         return tf.where(mask > 0, self.replace, im)
+
+    def recall(self, mask):
+        initial, self.replace = self.replace, tf.zeros((1, 1, 1), mask.dtype)
+        res = super().recall(self.call(mask, self.m))
+        self.replace = initial
+        return res
 
 class Flip(Augmentation):
     required, track = True, ("flipped",)
@@ -295,10 +307,15 @@ class Flip(Augmentation):
         self.flipped = tf.cast(False, tf.bool)
         super().__init__(*args, **kw)
 
-    @normalize((-1, 0, 1))
-    def call(self, im, m):
+    def caller(self, cls, im, m):
         self.flipped = m > 0
+        return cls.call(self, im, m)
+
+    def call(self, im, m):
         return im if self.flipped else tf.image.flip_left_right(im)
+
+    def recall(self, mask):
+        return super().recall(self.call(mask, self.m))
 
 class Adjust(
         Flip, Equalize, Posterize, Convert01, AutoContrast, Invert, Solarize,
@@ -336,6 +353,10 @@ class ApplyTransform(Blended):
             im, flat[:-1] / flat[-1], "BILINEAR", output_shape=self.output(im))
 
         return im[..., -1:], self.replace, im[..., :-1]
+
+    def recall(self, mask):
+        flat = tf.reshape(self._transform, (-1,))
+        return transform(mask, flat[:-1] / flat[-1], output_shape=self._output)
 
 class TranslateX(Transformation):
     @normalize((-0.4, 0, 0.4))
@@ -442,13 +463,15 @@ class Randomize:
         self.n, self.m = self.ops.choosable if n == -1 else n, m
         super().__init__(*args, **kw)
 
-    def __call__(self, im):
+    def __call__(self, im, mask=None):
         self.variables = self.initialization
         for i, op in enumerate(self.ops.sample(self.n)):
             inputs = len(signature(op).parameters) - 1
             m = self.m * tf.math.sign(tf.random.uniform((inputs,)) - 0.5)
             im = op(im, *tf.unstack(m))
-        return im
+        if mask is None:
+            return im
+        return im, self.recall(mask)
 
 class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
     pass
