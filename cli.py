@@ -3,8 +3,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from src.preprocessing import RandAugmentCropped, RandAugmentPadded
-from src.utils import (
-    strftime, helper, ArgumentParser, cli_builder, relpath)
+from src.utils import strftime, helper, ArgumentParser, cli_builder, relpath
 from src.base import TFDSTrainer
 from src.trainers import cli_names
 

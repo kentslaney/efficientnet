@@ -1,5 +1,4 @@
 import tensorflow as tf
-from collections import defaultdict
 from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
 from tensorflow_addons.image import transform
@@ -26,20 +25,15 @@ class CondCall:
         return res
 
 class OpsList:
-    def __init__(self, parent, ops, args, kw):
-        self.parent = parent
-        sub = [[j(*args, **kw) for j in i.ops] for i in ops]
-        self.ops, self.objs, self.required = (sum(i, []) for i in zip(*sum((
-            [(obj.ops.ops, obj.ops.objs, obj.ops.required) for obj in objs] + [
-                ([op], [parent], [op.required])]
-            for objs, op in zip(sub, ops)), [])))
-
+    def __init__(self, parent, ops):
+        self.parent, self.ops = parent, ops
+        self.required = [i.required for i in ops]
         self.choosable = len(self) - sum(self.required)
         self.offset = tf.range(self.choosable) + tf.cumsum(tf.cast(
             self.required, tf.int32))[tf.math.logical_not(self.required)]
 
     def __getitem__(self, i):
-        wrapped = partial(self.ops[i].caller, self.objs[i])
+        wrapped = partial(self.ops[i].caller, self.parent)
         wrapped = wraps(self.ops[i].call)(wrapped)
         wrapped = partial(wrapped, self.ops[i])
         return CondCall(self.parent, wrapped, self.required[i])
@@ -50,7 +44,7 @@ class OpsList:
         ).sampled_candidates
 
     def sample(self, n):
-        assert 0 <= n < len(self)
+        assert 0 <= n <= self.choosable
         chosen = tf.gather(self.offset, self._sample(n, self.choosable))
         updates = tf.repeat(True, tf.shape(chosen))
         mask = tf.scatter_nd(chosen[:, tf.newaxis], updates, (len(self),))
@@ -62,11 +56,6 @@ class OpsList:
 
     def __iter__(self):
         return (self[i] for i in range(len(self)))
-
-    @property
-    def tracking(self):
-        return set(sum(([(obj, var) for var in op.track] for op, obj in zip(
-            self.ops, self.objs)), []))
 
 class Normalized:
     def __new__(cls, *args, **kw):
@@ -131,38 +120,45 @@ def normalize(*args, **kw):
 
 class Augmentation:
     required, ops, track = False, (), ()
+
     def __new__(cls, *args, **kw):
-        res, ops = super().__new__(cls), defaultdict(list)
-        ops[cls].append((cls,))
-        for i in cls.__mro__:
-            parents = [j for j in i.__bases__ if __class__ in j.__mro__]
-            base = [ops[i]] if len(parents) == 1 else [
-                [(j, n) + ops[i][0][1:]] for n, j in enumerate(parents)]
-            for p, b in zip(parents, base):
-                ops[p] += b
-        res.ops = OpsList(res, tuple(i[0] for i in sorted(
-            ops[__class__], key=lambda x: x[::-1])), args, kw)
+        res = super().__new__(cls)
+        augmenting_parents = {i: sum(
+            issubclass(j, __class__) for j in i.__bases__)
+            for i in cls.__mro__}
+        grouped_leaves = sum((
+            i.__bases__ for i, j in augmenting_parents.items() if j > 1), ())
+        unique_path_leaves = set(i for i in grouped_leaves if max(
+            augmenting_parents[j] for j in i.__mro__) == 1)
+        ops = unique_path_leaves.union(set(
+            i for i in cls.__mro__ if __class__ in i.__bases__ and
+            augmenting_parents[i] > 1))
+        ops = [i for i in cls.__mro__ if i in ops] if ops else (cls,)
+        res.ops = OpsList(res, ops)
+        res.track = tuple(set(sum((
+            i.track for i in cls.__mro__ if issubclass(i, __class__)), ())))
+        res.__init__(*args, **kw)
         return res
 
-    def __init__(self, *args, **kw):
-        pass
+    def __init__(self):
+        self.initialization = self.variables
 
     def caller(self, cls, *args, **kw):
         return cls.call(self, *args, **kw)
 
     @property
     def variables(self):
-        return tuple(getattr(*i) for i in self.ops.tracking)
+        return tuple(getattr(self, i) for i in self.track)
 
     @variables.setter
     def variables(self, value):
-        for i, j in zip(self.ops.tracking, value):
-            setattr(*i, j)
+        for i, j in zip(self.track, value):
+            setattr(self, i, j)
 
-class Group(Augmentation):
-    required = True
-
-    def call(self, im):
+class Pipeline:
+    def __call__(self, im):
+        for op in self.ops:
+            im = op(im)
         return im
 
 class Convert01(Augmentation):
@@ -171,19 +167,13 @@ class Convert01(Augmentation):
     def call(self, im):
         return im / 255
 
-class Pipeline(Group):
-    def __call__(self, im):
-        for op in self.ops:
-            im = op(im)
-        return im
-
 class Reformat(Augmentation):
     required = True
     mean, norm = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 
     def __init__(self, *args, data_format="channels_first", **kw):
-        super().__init__(*args, **kw)
         self.channels_last = data_format == "channels_last"
+        super().__init__(*args, **kw)
 
     def call(self, im):
         im = (im - self.mean) / self.norm
@@ -210,12 +200,12 @@ class Sharpness(Blended):
     size, center = 3, 5
 
     def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
         kernel = tf.ones((self.size, self.size, 1, 1))
         kernel = tf.tensor_scatter_nd_update(
             kernel, [[self.size // 2, self.size // 2, 0, 0]], [self.center])
         kernel /= tf.reduce_sum(kernel)
         self.kernel = tf.tile(kernel, [1, 1, 3, 1])
+        super().__init__(*args, **kw)
 
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
@@ -278,16 +268,20 @@ class Equalize(Augmentation):
         return tf.gather(tf.cast(lut, tf.uint8), imi)
 
 class Cutout(Augmentation):
+    track = ("cutout_center",)
+
     def __init__(self, *args, **kw):
         self.replace = tf.constant(Reformat.mean)[tf.newaxis, tf.newaxis, :]
+        self.cutout_center = tf.zeros((2,))
         super().__init__(*args, **kw)
 
     @normalize((0, 0.6))
     def call(self, im, value):
+        self.cutout_center = tf.random.uniform((2,))
         shape = tf.shape(im)[:-1]
         shapef = tf.cast(shape, tf.float32)
         value = tf.cast(shapef * value // 2, tf.int32)
-        center = tf.cast(tf.random.uniform((2,)) * shapef, tf.int32)
+        center = tf.cast(self.cutout_center * shapef, tf.int32)
         bounds = tf.math.maximum([center - value, center + value], 0)
         bounds = tf.math.minimum(bounds, [shape - 1])
         padding = tf.transpose([[1], [-1]] * (bounds - [[0, 0], shape]))
@@ -295,16 +289,21 @@ class Cutout(Augmentation):
         return tf.where(mask > 0, self.replace, im)
 
 class Flip(Augmentation):
-    required = True
+    required, track = True, ("flipped",)
+
+    def __init__(self, *args, **kw):
+        self.flipped = tf.cast(False, tf.bool)
+        super().__init__(*args, **kw)
 
     @normalize((-1, 0, 1))
     def call(self, im, m):
-        return im if m > 0 else tf.image.flip_left_right(im)
+        self.flipped = m > 0
+        return im if self.flipped else tf.image.flip_left_right(im)
 
-class Adjust(Group):
-    ops = (Flip, Equalize, Posterize, Convert01, AutoContrast, Invert,
-           Solarize, SolarizeAdd, Color, Contrast, Brightness, Sharpness,
-           Cutout)
+class Adjust(
+        Flip, Equalize, Posterize, Convert01, AutoContrast, Invert, Solarize,
+        SolarizeAdd, Color, Contrast, Brightness, Sharpness, Cutout):
+    pass
 
 # transformations
 class Transformation(Augmentation):
@@ -318,6 +317,7 @@ class ApplyTransform(Blended):
     def __init__(self, *args, **kw):
         self._output, self._transform = tf.zeros((2,), tf.int32), tf.eye(3)
         self.replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
+        super().__init__(*args, **kw)
 
     def output(self, im):
         return tf.shape(im)[:-1] if tf.reduce_all(
@@ -385,8 +385,8 @@ class Reshape(ApplyTransform):
     required = True
 
     def __init__(self, shape, *args, **kw):
-        super().__init__(*args, **kw)
         self.shape, self._shape = tf.convert_to_tensor(shape), tuple(shape)
+        super().__init__(*args, **kw)
 
     def caller(self, cls, im, *args, **kw):
         im = super().caller(cls, im, *args, **kw)
@@ -401,31 +401,36 @@ class Stretch(Reshape):
         return super().call(im)
 
 class Crop(Reshape):
+    track = ("crop_scale", "crop_offset")
+
     def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kw):
-        super().__init__(*args, **kw)
         dist = tfp.distributions.Beta(a, b)
         iid = lambda: dist.sample((2,))
         same = lambda: tf.repeat(dist.sample(), 2)
         ones = lambda: tf.constant([1., 1.])
         self.crop_sample = ones if not recrop else iid if distort else same
+        self.crop_scale, self.crop_offset = tf.unstack(tf.zeros((2, 2)))
         self.distort = distort
+        super().__init__(*args, **kw)
 
     def call(self, im):
         self._output, bounds = self.shape, self.bounds(self.shape[::-1])
+        self.crop_offset = tf.random.uniform((2,))
+
         valid = tf.cast(tf.shape(im)[:-1][::-1], tf.float32)
         crop = (self._transform @ bounds)[:-1] / valid[:, tf.newaxis]
         extrema = tf.stack([tf.reduce_min(crop, 1), tf.reduce_max(crop, 1)])
         limit = 1 / (extrema[1] - extrema[0])
-        scale = self.crop_sample() * (
+        self.crop_scale = scale = self.crop_sample() * (
             limit if self.distort else tf.reduce_min(limit))
         offset = -valid * scale * extrema[0] + \
-            valid * tf.random.uniform((2,)) * (limit - scale) / limit
+            valid * self.crop_offset * (limit - scale) / limit
         self._transform = [[scale[0], 0,        offset[0]],
                            [0,        scale[1], offset[1]],
                            [0,        0,        1        ]] @ self._transform
         return super().call(im)
 
-class CenterCrop(Reshape, Augmentation):
+class CenterCrop(Reshape):
     def call(self, im):
         return tf.keras.preprocessing.image.smart_resize(im, self.shape)
 
@@ -436,26 +441,27 @@ class CroppedTransforms(Rotate, Shear, Crop):
     pass
 
 # endpoints
-class Randomize(Group):
+class Randomize:
     def __init__(self, *args, n=3, m=.4, **kw):
-        super().__init__(*args, **kw)
         self.n, self.m = self.ops.choosable if n == -1 else n, m
+        super().__init__(*args, **kw)
 
     def __call__(self, im):
+        self.variables = self.initialization
         for i, op in enumerate(self.ops.sample(self.n)):
             inputs = len(signature(op).parameters) - 1
             m = self.m * tf.math.sign(tf.random.uniform((inputs,)) - 0.5)
             im = op(im, *tf.unstack(m))
         return im
 
-class RandAugmentPadded(Randomize):
-    ops = (Adjust, PaddedTransforms, Reformat)
+class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
+    pass
 
-class RandAugmentCropped(Randomize):
-    ops = (Adjust, CroppedTransforms, Reformat)
+class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
+    pass
 
-class PrepStretched(Pipeline):
-    ops = (Convert01, Stretch, Reformat)
+class PrepStretched(Pipeline, Convert01, Stretch, Reformat):
+    pass
 
-class PrepCropped(Pipeline):
-    ops = (Convert01, CenterCrop, Reformat)
+class PrepCropped(Pipeline, Convert01, CenterCrop, Reformat):
+    pass

@@ -126,6 +126,7 @@ class Trainer:
         self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
 
     # given a preprocessing function, sets the behavior for how to apply it
+    # defaults to classification mapping
     def mapper(self, f):
         return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
 
@@ -192,34 +193,16 @@ class TFDSTrainer(Trainer):
             "and support as_supervised"))
         parser.add_argument("--data-dir", help=(
             "default directory for TFDS data, supports GCS buckets"))
-
-        group = parser.add_mutually_exclusive_group(required=False)
-        group.add_argument("--train-all", dest="holdout", action="store_false",
-                           help="train on all available splits")
-        group.add_argument(
-            "--no-eval", dest="holdout", action="store_true", help=(
-                "don't run evaluation steps, but hold still hold out one "
-                "split"))
         super().cli(parser)
 
-    # TODO: train test and validation are the only labels
     @cli_builder
     def __init__(self, dataset, holdout=None, data_dir=None, **kw):
         self.builder(dataset, data_dir)
         data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
                                shuffle_files=True, as_supervised=True)
-        sizes, _, data = zip(*sorted([
-            (info.splits[k].num_examples, i, v) for i, (k, v) in enumerate(
-                data.items())], reverse=True))
-
-        hold = -1 if holdout is False else -2
-        for i in data[:hold]:
-            data[hold] = data[hold].concatenate(i)
-        data = data[hold:] if len(data) >= -hold else (data, None)
-        data = (data[0], None) if holdout is True else data
-        self.dataset, self.validation = data
+        self.dataset, self.validation = data["train"], data["test"]
         self.outputs = info.features["label"].num_classes
-        self.length = sum(sizes[:len(sizes) + hold + 1])
+        self.length = info.splits["train"].num_examples
         super().__init__(**kw)
 
     @classmethod
