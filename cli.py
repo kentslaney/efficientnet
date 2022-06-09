@@ -48,8 +48,7 @@ def preview_cli(parser):
     parser.add_argument("--data-dir", help=(
         "default directory for TFDS data, supports GCS buckets"))
     parser.add_argument("--size", metavar="N", type=int, help=(
-        "force the input image to be a certain size, will default to the "
-        "recommended size for the preset if unset"))
+        "set the output image size for each image previewed"))
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--pad", action="store_true", help=(
