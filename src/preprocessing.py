@@ -401,30 +401,26 @@ class Stretch(Reshape):
         return super().call(im)
 
 class Crop(Reshape):
-    track = ("crop_scale", "crop_offset")
-
     def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kw):
         dist = tfp.distributions.Beta(a, b)
         iid = lambda: dist.sample((2,))
         same = lambda: tf.repeat(dist.sample(), 2)
         ones = lambda: tf.constant([1., 1.])
         self.crop_sample = ones if not recrop else iid if distort else same
-        self.crop_scale, self.crop_offset = tf.unstack(tf.zeros((2, 2)))
         self.distort = distort
         super().__init__(*args, **kw)
 
     def call(self, im):
         self._output, bounds = self.shape, self.bounds(self.shape[::-1])
-        self.crop_offset = tf.random.uniform((2,))
 
         valid = tf.cast(tf.shape(im)[:-1][::-1], tf.float32)
         crop = (self._transform @ bounds)[:-1] / valid[:, tf.newaxis]
         extrema = tf.stack([tf.reduce_min(crop, 1), tf.reduce_max(crop, 1)])
         limit = 1 / (extrema[1] - extrema[0])
-        self.crop_scale = scale = self.crop_sample() * (
+        scale = self.crop_sample() * (
             limit if self.distort else tf.reduce_min(limit))
         offset = -valid * scale * extrema[0] + \
-            valid * self.crop_offset * (limit - scale) / limit
+            valid * tf.random.uniform((2,)) * (limit - scale) / limit
         self._transform = [[scale[0], 0,        offset[0]],
                            [0,        scale[1], offset[1]],
                            [0,        0,        1        ]] @ self._transform
