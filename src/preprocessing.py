@@ -5,6 +5,8 @@ from tensorflow_addons.image import transform
 import tensorflow_probability as tfp
 from math import radians
 
+# adds a `cond` attribute to a callable, which provides a static graph
+# conditional that will execute the provided method or not based on a tf.Tensor
 class CondCall:
     def __init__(self, parent, f, bypass=False):
         assert type(bypass) == bool
@@ -24,6 +26,8 @@ class CondCall:
             lambda: (im, identity))
         return res
 
+# list wrapper that will always execute classes where `required == True` and
+# can sample a fixed number of the optional augmentations
 class OpsList:
     def __init__(self, parent, ops):
         self.parent, self.ops = parent, ops
@@ -32,13 +36,16 @@ class OpsList:
         self.offset = tf.range(self.choosable) + tf.cumsum(tf.cast(
             self.required, tf.int32))[tf.math.logical_not(self.required)]
 
+    # calls the augmentation's caller method and pulls the method signature
+    # from call
     def __getitem__(self, i):
         wrapped = partial(self.ops[i].caller, self.parent)
         wrapped = wraps(self.ops[i].call)(wrapped)
         wrapped = partial(wrapped, self.ops[i])
         return CondCall(self.parent, wrapped, self.required[i])
 
-    def _sample(self, n, m): # chooses n out of the first m natural numbers
+    # chooses n out of the first m natural numbers
+    def _sample(self, n, m):
         return tf.random.uniform_candidate_sampler(
             tf.range(m, dtype=tf.int64)[tf.newaxis, :], m, n, True, m
         ).sampled_candidates
@@ -57,11 +64,14 @@ class OpsList:
     def __iter__(self):
         return (self[i] for i in range(len(self)))
 
+# remaps an argument from [-1...0...1] to [lo...mid...hi] or [hi, mid, hi]
 class Normalized:
     def __new__(cls, *args, **kw):
         self = super().__new__(cls)
         def decorator(f):
             self.__init__(f)
+            # create mapping from initialized class arguments to decorated
+            # method arguments
             self.normal = self.sig.bind_partial(*args, **kw).arguments
             for k, v in self.normal.items():
                 kind = self.sig.parameters[k]
@@ -77,6 +87,7 @@ class Normalized:
     def __init__(self, f):
         self.f, self.sig = f, signature(f)
 
+    # remaps method defaults too
     def __call__(self, *args, **kw):
         bound = self.sig.bind(*args, **kw)
         bound.apply_defaults()
@@ -87,6 +98,9 @@ class Normalized:
                 bargs[k] = res
         return self.f(*bound.args, **bound.kwargs)
 
+    # translate length 0, 2, 3, or 4 tuple to fixed remapping specs
+    # optional first argument: `int` or `float` depending on desired casting
+    # other arguments specify [lo=hi (default)], mid, hi
     @classmethod
     def parse(cls, args):
         if len(args) == 0:
@@ -101,6 +115,7 @@ class Normalized:
         assert 2 <= len(args) <= 3
         return (res,) + tuple((args[1],) + args if len(args) == 2 else args)
 
+    # remaps an input magnitude to the output range
     @classmethod
     def map(cls, floor, lo, center, hi, v):
         lo, center, hi = (tf.constant(i, tf.float32) for i in (lo, center, hi))
@@ -115,6 +130,7 @@ class Normalized:
         else:
             return tf.cast(v * (hi - lo) + lo, tf.float32)
 
+# skip the first two arguments (`self` and `im` for augmentation)
 def normalize(*args, **kw):
     return Normalized((), (), *args, **kw)
 
