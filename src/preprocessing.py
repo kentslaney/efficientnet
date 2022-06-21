@@ -3,7 +3,7 @@ from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
 from tensorflow_addons.image import transform
 import tensorflow_probability as tfp
-from math import radians
+from math import radians, pi
 
 # adds a `cond` attribute to a callable, which provides a static graph
 # conditional that will execute the provided method or not based on a tf.Tensor
@@ -185,6 +185,17 @@ class Convert01(Augmentation):
 
     def call(self, im):
         return im / 255
+
+class WaveletTransform(Augmentation):
+    required = True
+
+    def call(self, im):
+        # 8 bit color, so the smallest wavelet will cycle once per 2 increments
+        resolution = 8
+        rescaled = pi * im[..., tf.newaxis]
+        rescaled *= tf.reshape(tf.range(
+            1, resolution + 1, dtype=tf.float32), (1, 1, 1, -1))
+        return tf.concat(tf.cos(rescaled), -1)
 
 class Reformat(Augmentation):
     required = True

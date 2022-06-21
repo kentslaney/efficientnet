@@ -196,7 +196,7 @@ class TFDSTrainer(Trainer):
         super().cli(parser)
 
     @cli_builder
-    def __init__(self, dataset, holdout=None, data_dir=None, **kw):
+    def __init__(self, dataset, data_dir=None, **kw):
         self.builder(dataset, data_dir)
         data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
                                shuffle_files=True, as_supervised=True)
