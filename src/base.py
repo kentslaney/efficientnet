@@ -30,14 +30,21 @@ class Trainer:
         parser.add_argument(
             "--lr", dest="learning_rate", type=float, help=(
                 "model learning rate per example per batch"))
-        parser.add_argument("--no-decay", dest="decay", action="store_false",
-                            help="don't decay the learning rate")
         parser.add_argument("--decay-warmup", type=int, help=(
             "number of epochs to warm up learning rate"))
         parser.add_argument("--decay-factor", type=float, help=(
             "lr decay per epoch after warmup"))
         parser.add_argument("--profile", type=int, action=RequiredLength(1, 2),
                             metavar="N", help="batches to profile")
+
+        group = parser.add_mutually_exclusive_group(required=False)
+        group.add_argument("--no-decay", dest="decay", action="store_false",
+                           help="don't decay the learning rate")
+        group.add_argument(
+            "--set-decay", dest="decay", action="store_true", help=(
+                "set the decay flag (this is the default behavior in base "
+                "class but can be overriden by subclasses, this allows it to "
+                "be set at the CLI level)")
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument(
@@ -228,15 +235,17 @@ class TFDSTrainer(Trainer):
 class RandAugmentTrainer(Trainer):
     @classmethod
     def cli(self, parser):
-        group = parser.add_mutually_exclusive_group(required=False)
-        group.add_argument("--pad", action="store_true", help=(
-            "pads the augmented images instead of cropping them"))
-        group.add_argument(
-            "--no-augment", dest="augment", action="store_false",
-            help="don't augment the input")
         parser.add_argument("--size", metavar="N", type=int, help=(
             "force the input image to be a certain size, will default to the "
             "recommended size for the preset if unset"))
+
+        group = parser.add_mutually_exclusive_group(required=False)
+        group.add_argument("--pad", action="store_true", help=(
+            "pads the augmented images instead of cropping them, this is the "
+            "default behavior for the original RandAugment implementation"))
+        group.add_argument(
+            "--no-augment", dest="augment", action="store_false",
+            help="don't augment the input")
         super().cli(parser)
 
     @cli_builder

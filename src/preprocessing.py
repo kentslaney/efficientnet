@@ -50,6 +50,8 @@ class OpsList:
             tf.range(m, dtype=tf.int64)[tf.newaxis, :], m, n, True, m
         ).sampled_candidates
 
+    # returns a list of caller methods with the instance and object class
+    # filled in as a set of partial arguments
     def sample(self, n):
         assert 0 <= n <= self.choosable
         chosen = tf.gather(self.offset, self._sample(n, self.choosable))
@@ -121,12 +123,11 @@ class Normalized:
         lo, center, hi = (tf.constant(i, tf.float32) for i in (lo, center, hi))
         v, lo, hi = tf.math.abs(v), center, lo if v < 0 else hi
         if floor:
+            # handle flipped case by inverting value and forcing lo, hi sorted
             v, lo, hi = tf.cond(
                 lo < hi, lambda: (v, lo, hi), lambda: (1 - v, hi, lo))
-            mapped = v * (hi - lo + 1) + lo - 0.5
-            mapped = tf.cond(mapped == hi + 0.5, lambda: hi, lambda: tf.cond(
-                mapped == lo - 0.5, lambda: lo, lambda: tf.math.round(mapped)))
-            return tf.cast(mapped, tf.int32)
+            # map to range inclusive then floor
+            return tf.cast(v * (hi - lo + 1) + lo, tf.int32)
         else:
             return tf.cast(v * (hi - lo) + lo, tf.float32)
 
@@ -134,23 +135,42 @@ class Normalized:
 def normalize(*args, **kw):
     return Normalized((), (), *args, **kw)
 
+# defines a base class for the preprocessing steps that tracks distinct classes
+# when multiple are inherited to allow a subset of the pipeline to be called
 class Augmentation:
+    # subclasses have to specify if the pipeline step is always executed in the
+    # `required` property and, otherwise, which instance variables the static
+    # graph should explicitly passed out of the tf.cond in CondCall
     required, ops, track = False, (), ()
 
+    # Initializes `ops` to the set of classes that have exactly one one
+    # inheritance path back to Augmentation and are a parent of a class with
+    # multiple paths back. Classes that inherit multiple Augmentation
+    # subclasses but also inherit directly from Augmentation are also included.
+    # If the initialized class only has one path back total, `ops` is set just
+    # to the base class.
     def __new__(cls, *args, **kw):
         res = super().__new__(cls)
+        # number of parents for each superclass that inherit from __class__
         augmenting_parents = {i: sum(
             issubclass(j, __class__) for j in i.__bases__)
             for i in cls.__mro__}
+        # immediate parents of classes that inherit multiple augmentations
         grouped_leaves = sum((
             i.__bases__ for i, j in augmenting_parents.items() if j > 1), ())
+        # subset of `grouped_leaves` that has one path back to __class__
         unique_path_leaves = set(i for i in grouped_leaves if max(
             augmenting_parents[j] for j in i.__mro__) == 1)
+        # union of `unique_path_leaves` and classes that inherit multiple
+        # augmentations, but also inherit directly from __class__
         ops = unique_path_leaves.union(set(
             i for i in cls.__mro__ if __class__ in i.__bases__ and
             augmenting_parents[i] > 1))
+        # order `ops` by method resolution order and fall back to just the base
+        # class if `ops` is empty
         ops = [i for i in cls.__mro__ if i in ops] if ops else (cls,)
         res.ops = OpsList(res, ops)
+        # set of all unique `track` variables for all classes inherited from
         res.track = tuple(set(sum((
             i.track for i in cls.__mro__ if issubclass(i, __class__)), ())))
         res.__init__(*args, **kw)
@@ -159,33 +179,40 @@ class Augmentation:
     def __init__(self):
         self.initialization = self.variables
 
+    # wrapper for the call method in the op class
     def caller(self, cls, *args, **kw):
         return cls.call(self, *args, **kw)
 
+    # returns a tuple of the tracked variables to pass out of tf.cond
     @property
     def variables(self):
         return tuple(getattr(self, i) for i in self.track)
 
+    # sets the instance variables from the values pulled from another branch
     @variables.setter
     def variables(self, value):
         for i, j in zip(self.track, value):
             setattr(self, i, j)
 
+    # applies the same set of augmentations to a mask based on variable values
     def recall(self, mask):
         return mask
 
+# call every augmentation inherited
 class Pipeline:
     def __call__(self, im):
         for op in self.ops:
             im = op(im)
         return im
 
+# convert color inputs from [0, 255] to [0, 1]
 class Convert01(Augmentation):
     required = True
 
     def call(self, im):
         return im / 255
 
+# apply a series of doubling frequency cos waves each color channel
 class WaveletTransform(Augmentation):
     required = True
 
@@ -197,6 +224,8 @@ class WaveletTransform(Augmentation):
             1, resolution + 1, dtype=tf.float32), (1, 1, 1, -1))
         return tf.concat(tf.cos(rescaled), -1)
 
+# renormalize color distributions and optionally transpose the color channel
+# if the data format is NCHW
 class Reformat(Augmentation):
     required = True
     mean, norm = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
@@ -210,22 +239,28 @@ class Reformat(Augmentation):
         return im if self.channels_last else tf.transpose(im, [2, 0, 1])
 
 # adjustments
+# linear combination of two images, subclass' call method has to return a tuple
+# of magnitude, center, and (optionally) endpoint (which defaults to the
+# original image)
 class Blended(Augmentation):
     def caller(self, cls, im, *args, **kw):
         res = cls.call(self, im, *args, **kw)
         m, im0, im1 = res if len(res) == 3 else res + (im,)
         return tf.clip_by_value(im0 + m * (im1 - im0), 0., 1.)
 
+# Equivalent to PIL Color
 class Color(Blended):
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
         return m, tf.image.grayscale_to_rgb(tf.image.rgb_to_grayscale(im))
 
+# Equivalent to PIL Brightness
 class Brightness(Blended):
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
         return m, tf.zeros_like(im)
 
+# Equivalent to PIL Sharpness
 class Sharpness(Blended):
     size, center = 3, 5
 
@@ -243,28 +278,33 @@ class Sharpness(Blended):
             im[tf.newaxis, ...], self.kernel, [1, 1, 1, 1], "SAME")
         return m, res[0]
 
+# Equivalent to PIL Contrast
 class Contrast(Augmentation):
     @normalize((0.2, 1, 1.8))
     def call(self, im, m):
         return tf.image.adjust_contrast(im, m)
 
+# invert any channel values above the threshold
 class Solarize(Augmentation):
-    @normalize((0, 0.9))
+    @normalize((0, 1.))
     def call(self, im, m):
         return tf.where(im < m, im, 1 - im)
 
+# adjust any channel value below the threshold by the given magnitude
 class SolarizeAdd(Augmentation):
     threshold = 0.5
 
-    @normalize((0, 0.9))
+    @normalize((-110/256, 0, 110/256))
     def call(self, im, m):
         return tf.where(
             im < self.threshold, tf.clip_by_value(im + m, 0, 1), im)
 
+# invert the image
 class Invert(Augmentation):
     def call(self, im):
         return 1 - im
 
+# remove the last 0 to 4 bits
 class Posterize(Augmentation):
     @normalize((int, 0, 4))
     def call(self, im, m):
@@ -272,6 +312,7 @@ class Posterize(Augmentation):
         res = tf.bitwise.right_shift(im, shift)
         return tf.bitwise.left_shift(res, shift)
 
+# rescale each channel to cover full [0, 1] range
 class AutoContrast(Augmentation):
     def call(self, im):
         lo = tf.reduce_min(im, (0, 1), True)
@@ -280,6 +321,7 @@ class AutoContrast(Augmentation):
         offset = tf.where(lo == hi, 0., lo)
         return (im - offset) * scale
 
+# rescale channel values by percentile to create a uniform distribution
 class Equalize(Augmentation):
     def call(self, im):
         return tf.stack([self._augment(im[..., c]) for c in range(3)], -1)
@@ -297,6 +339,7 @@ class Equalize(Augmentation):
         lut = tf.clip_by_value(tf.concat([[0], lut[:-1]], 0), 0, 255)
         return tf.gather(tf.cast(lut, tf.uint8), imi)
 
+# cut out a random rectangle from the image
 class Cutout(Augmentation):
     track = ("cutout_center",)
 
@@ -327,6 +370,7 @@ class Cutout(Augmentation):
         self.replace = initial
         return res
 
+# random horizontal flip
 class Flip(Augmentation):
     required, track = True, ("flipped",)
 
@@ -355,6 +399,8 @@ class Transformation(Augmentation):
         self._transform @= cls.call(self, im, *args, **kw)
         return im
 
+# transforms the image according to the net homogeneous transform matrix stored
+# in self._transform and fills OOB values with self.replace
 class ApplyTransform(Blended):
     required, track = True, ("_output", "_transform")
 
@@ -363,6 +409,7 @@ class ApplyTransform(Blended):
         self.replace = tf.constant([[[125, 123, 114]]], tf.float32) / 255
         super().__init__(*args, **kw)
 
+    # output image size
     def output(self, im):
         return tf.shape(im)[:-1] if tf.reduce_all(
             self._output == 0) else self._output
