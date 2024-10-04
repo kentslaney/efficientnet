@@ -370,7 +370,8 @@ class TFDSTrainer(Trainer):
                     for i in data_source),
                 output_signature={
                     "image": tf.TensorSpec((None, None, 3), dtype=tf.uint8),
-                    "mask": tf.TensorSpec((None, None, None, 3), dtype=tf.uint8),
+                    "mask": tf.TensorSpec(
+                        (None, None, None, 3), dtype=tf.uint8),
                     "label": tf.TensorSpec((None,), dtype=tf.int64)})
         data = data.map(lambda x: {**x, "mask": tf.transpose(
                 tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
