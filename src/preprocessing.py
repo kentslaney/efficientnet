@@ -1,7 +1,6 @@
 import tensorflow as tf
 from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
-from tensorflow.keras.ops.image import affine_transform as transform
 from math import radians, pi
 
 # adds a `cond` attribute to a callable, which provides a static graph
@@ -422,14 +421,19 @@ class ApplyTransform(Blended):
     def call(self, im):
         im = tf.concat((im, tf.ones(tf.shape(im)[:-1])[..., tf.newaxis]), -1)
         flat = tf.reshape(self._transform, (-1,))
-        im = transform(
-            im, flat[:-1] / flat[-1], "BILINEAR", output_shape=self.output(im))
+        im = tf.raw_ops.ImageProjectiveTransformV3(
+                images=im[None], transforms=(flat[:-1] / flat[-1])[None],
+                output_shape=self.output(im), fill_value=0.,
+                interpolation="BILINEAR")[0]
 
         return im[..., -1:], self.replace, im[..., :-1]
 
     def recall(self, mask):
         flat = tf.reshape(self._transform, (-1,))
-        return transform(mask, flat[:-1] / flat[-1], output_shape=self._output)
+        return tf.raw_ops.ImageProjectiveTransformV3(
+                images=mask[None], transforms=(flat[:-1] / flat[-1])[None],
+                output_shape=self._output, fill_value=0.,
+                interpolation="NEAREST")[0]
 
 class TranslateX(Transformation):
     @normalize((-0.4, 0, 0.4))

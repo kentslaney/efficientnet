@@ -347,6 +347,35 @@ class TFDSTrainer(Trainer):
         return {"download_config": tfds.download.DownloadConfig(
                 manual_dir=str(data_root / "images" / "mscoco" / "images"))}
 
+    @classmethod
+    def as_dataset(cls, dataset, data_dir, **kw):
+        cls.builder(dataset, data_dir)
+        if hasattr(cls, "_tf_dataset_" + dataset):
+            return getattr(cls, "_tf_dataset_" + dataset)(data_dir)
+        else:
+            return tfds.load(
+                    dataset, data_dir=data_dir, with_info=True,
+                    shuffle_files=True, **kw)
+
+    @classmethod
+    def _tf_dataset_ref_coco(cls, data_dir):
+        data_source = tfds.data_source(
+                "ref_coco", split="train", data_dir=data_dir)
+        info = data_source.dataset_info
+        data = tf.data.Dataset.from_generator(
+                lambda: (
+                    {
+                        "image": i["image"], "mask": i["objects"]["mask"],
+                        "label": i["objects"]["label"]}
+                    for i in data_source),
+                output_signature={
+                    "image": tf.TensorSpec((None, None, 3), dtype=tf.uint8),
+                    "mask": tf.TensorSpec((None, None, None, 3), dtype=tf.uint8),
+                    "label": tf.TensorSpec((None,), dtype=tf.int64)})
+        data = data.map(lambda x: {**x, "mask": tf.transpose(
+                tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
+        return data, info
+
 class RandAugmentTrainer(Trainer):
     @classmethod
     def cli(self, parser):

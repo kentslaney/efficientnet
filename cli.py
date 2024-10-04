@@ -19,9 +19,7 @@ def train_cli(parser):
 @cli_builder
 def preview(dataset="imagenette/320px-v2", pad=False, augment=True, size=224,
             data_dir=None, job_dir=None, fname="{time}.png", **kw):
-    TFDSTrainer.builder(dataset, data_dir)
-    data, info = tfds.load(dataset, split="train", data_dir=data_dir,
-                           with_info=True, shuffle_files=True)
+    data, info = TFDSTrainer.as_dataset(dataset, data_dir, split="train")
 
     if augment:
         aug = RandAugmentPadded if pad else RandAugmentCropped
