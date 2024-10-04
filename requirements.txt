@@ -1,5 +1,4 @@
 tensorflow[and-cuda]
 tensorflow-datasets
-tensorflow-probability
 opencv-python
 matplotlib
