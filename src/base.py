@@ -326,7 +326,7 @@ class TFDSTrainer(Trainer):
                     .replace("pickle.load(open(ref_file, 'r'))",
                              "pickle.load(open(ref_file, 'rb'))")\
                     .replace("images/mscoco/images/train2014",
-                             "images/mscoco/coco_train2014")
+                             "images/mscoco/images/coco_train2014")
         py3 = re.sub("^([ \t]*print) (.*)$", r"\1(\2)", py2, flags=re.MULTILINE)
         with open(refer_path / "refer.py", "w") as fp:
             fp.write(py3)
