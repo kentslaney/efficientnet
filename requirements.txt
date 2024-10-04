@@ -1,5 +1,4 @@
-tensorflow
-tensorflow-addons
+tensorflow[and-cuda]
 tensorflow-datasets
 tensorflow-probability
 matplotlib

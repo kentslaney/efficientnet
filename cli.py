@@ -61,8 +61,9 @@ def preview_cli(parser):
 
 @cli_builder
 def download(dataset="imagenette/320px-v2", data_dir=None):
-    TFDSTrainer.builder(dataset, data_dir)
-    tfds.load(dataset, split="train", data_dir=data_dir)
+    return tfds.data_source(
+            dataset, split="train", data_dir=data_dir,
+            download_and_prepare_kwargs=TFDSTrainer.builder(dataset, data_dir))
 
 def download_cli(parser):
     parser.add_argument("dataset", help="choose a TFDS dataset to download")

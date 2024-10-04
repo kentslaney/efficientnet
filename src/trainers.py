@@ -1,11 +1,13 @@
 import tensorflow as tf
-from tensorflow_addons.optimizers import MovingAverage
+from tensorflow.train import ExponentialMovingAverage
 from src.efficientnet import Classifier, Embedding
 from src.base import RandAugmentTrainer, TFDSTrainer
 from src.utils import TPUBatchNormalization, RequiredLength, cli_builder
 from src.border import Conv2D, DepthwiseConv2D
 from src.mbconv import MBConv
 from src.simple import SimpleTrainer
+
+MovingAverage = ExponentialMovingAverage(0.99)
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),

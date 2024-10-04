@@ -44,7 +44,7 @@ class Trainer:
             "--set-decay", dest="decay", action="store_true", help=(
                 "set the decay flag (this is the default behavior in base "
                 "class but can be overriden by subclasses, this allows it to "
-                "be set at the CLI level)")
+                "be set at the CLI level)"))
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument(
@@ -216,21 +216,136 @@ class TFDSTrainer(Trainer):
     def builder(cls, dataset, data_dir):
         if hasattr(cls, "_tfds_" + dataset) and not tf.io.gfile.exists(
                 tfds.builder(dataset, data_dir=data_dir).data_path):
-            getattr(cls, "_tfds_" + dataset)(data_dir)
+            return getattr(cls, "_tfds_" + dataset)(data_dir)
 
-    @classmethod
-    def _tfds_imagenet2012(cls, data_dir):
+    @staticmethod
+    def gfile_download(data_dir, url_dict):
         data_dir = os.path.expanduser(
             tfds.core.constants.DATA_DIR if data_dir is None else data_dir)
         data_base = os.path.join(data_dir, "downloads", "manual")
         downloader = tfds.download.DownloadManager(download_dir=data_base)
+        paths = []
+        for url_base in sorted(url_dict.keys()):
+            same_name = isinstance(url_dict[url_base], tuple)
+            for fname in (url_dict[url_base],)[0 if same_name else slice(None)]:
+                paths.append(tfds.download.Resource(
+                    path=os.path.join(data_base, fname), url=url_base + (
+                        fname if same_name else "")))
+        return downloader, downloader.download(paths), paths
+
+    @classmethod
+    def _tfds_imagenet2012(cls, data_dir):
         url_base = "https://image-net.org/data/ILSVRC/2012/"
         files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
-        paths = [tfds.download.Resource(path=os.path.join(
-            data_base, fname), url=url_base + fname) for fname in files]
-        paths = [path for path in paths if not tf.io.gfile.exists(path.path)]
-        if paths:
-            downloader.download(paths)
+        cls.gfile_download(data_dir, {url_base: files})
+
+    # relative to `pathlib.Path(tfds.__file__).parent` or
+    # https://github.com/tensorflow/datasets/blob/master/tensorflow_datasets/
+    # datasets/ref_coco/manual_download_process.py
+    @staticmethod
+    def ref_coco_manual_download_process(
+            COCO, REFER, ref_data_root, coco_annotations_file, out_file):
+        import json
+        all_refs = []
+        for dataset, split_bys in [
+            ('refcoco', ['google', 'unc']),
+            ('refcoco+', ['unc']),
+            ('refcocog', ['google', 'umd']),
+        ]:
+          for split_by in split_bys:
+            refer = REFER(ref_data_root, dataset, split_by)
+            for ref_id in refer.getRefIds():
+              ref = refer.Refs[ref_id]
+              ann = refer.refToAnn[ref_id]
+              ref['ann'] = ann
+              ref['dataset'] = dataset
+              ref['dataset_partition'] = split_by
+              all_refs.append(ref)
+
+        coco = COCO(coco_annotations_file)
+        ref_image_ids = set(x['image_id'] for x in all_refs)
+        coco_anns = {
+            image_id: {
+                'info': coco.imgs[image_id], 'anns': coco.imgToAnns[image_id]}
+            for image_id in ref_image_ids
+        }
+
+        with open(out_file, 'w') as f:
+          json.dump({'ref': all_refs, 'coco_anns': coco_anns}, f)
+
+    @classmethod
+    def _tfds_ref_coco(cls, data_dir):
+        import sys, re, pathlib
+        from setuptools import sandbox
+        unc_url_base = (
+                "https://web.archive.org/web/20220515000000/"
+                "https://bvisionweb1.cs.unc.edu/licheng/referit/data/")
+        unc_files = {
+                unc_url_base: (
+                    "refclef.zip", "refcoco.zip", "refcoco+.zip",
+                    "refcocog.zip"),
+                unc_url_base + "images/": ("saiapr_tc-12.zip",)}
+        train2014 = {
+                (
+                    "http://images.cocodataset.org/annotations/"
+                    "annotations_trainval2014.zip"): "annotations",
+                "http://images.cocodataset.org/zips/": ("train2014.zip",)}
+        github_url = "https://github.com/{}/archive/refs/heads/master.zip"
+        coco_apis = {
+                **unc_files, **train2014,
+                github_url.format("lichengunc/refer"): "refer-master.zip",
+                github_url.format("cocodataset/cocoapi"): "cocoapi-master.zip"}
+        dl, out, sym = cls.gfile_download(data_dir, coco_apis)
+        mapping = {name.path.stem: path for name, path in zip(sym, out)}
+        data_root = dl.download_dir / "data"
+        rename = {"train2014": "coco_train2014"}
+        for path in (
+                ("refcoco",), ("refcoco+",), ("refcocog",), ("refclef",),
+                ("annotations",), ("refer-master",), ("cocoapi-master",),
+                ("images", "saiapr_tc-12"),
+                ("images", "mscoco", "images", "train2014")):
+            res = data_root
+            for subfolder in path[:-1]:
+                res /= subfolder
+            tf.io.gfile.makedirs(res)
+            res /= rename.get(path[-1], path[-1])
+            if not tf.io.gfile.exists(res):
+                extracted = dl.extract(mapping[path[-1]])
+                (extracted / path[-1]).rename(res)
+                tf.io.gfile.rmtree(extracted)
+        cocoapi = data_root / "cocoapi-master" / "PythonAPI"
+        refer_path = data_root / "refer-master"
+        with open(cocoapi / "setup.py", "r") as fp:
+            diff = fp.read().replace("'-Wno-cpp', '-Wno-unused-function', ", "")
+        with open(cocoapi / "setup.py", "w") as fp:
+            fp.write(diff)
+        with open(refer_path / "refer.py", "r") as fp:
+            py2 = re.sub("", "", fp.read())\
+                    .replace("cPickle", "pickle")\
+                    .replace("import skimage.io as io", "")\
+                    .replace("pickle.load(open(ref_file, 'r'))",
+                             "pickle.load(open(ref_file, 'rb'))")\
+                    .replace("images/mscoco/images/train2014",
+                             "images/mscoco/coco_train2014")
+        py3 = re.sub("^([ \t]*print) (.*)$", r"\1(\2)", py2, flags=re.MULTILINE)
+        with open(refer_path / "refer.py", "w") as fp:
+            fp.write(py3)
+        out_file = data_root / "images" / "mscoco" / "images" / "refcoco.json"
+        sandbox.run_setup(cocoapi / "setup.py", ['build_ext', '--inplace'])
+        so = tf.io.gfile.glob(str(cocoapi / "pycocotools" / "_mask.*.so"))
+        basename = pathlib.Path(so[0]).name
+        tf.io.gfile.copy(so[0], refer_path / "external" / basename, True)
+        extra_paths = (refer_path, cocoapi)
+        for path in extra_paths:
+            sys.path.insert(0, str(path))
+        if not tf.io.gfile.exists(out_file):
+            from pycocotools.coco import COCO
+            from refer import REFER
+            annotations = data_root / "annotations" / "instances_train2014.json"
+            cls.ref_coco_manual_download_process(
+                    COCO, REFER, data_root, annotations, out_file)
+        return {"download_config": tfds.download.DownloadConfig(
+                manual_dir=str(data_root / "images" / "mscoco" / "images"))}
 
 class RandAugmentTrainer(Trainer):
     @classmethod

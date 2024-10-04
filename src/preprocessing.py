@@ -1,8 +1,7 @@
 import tensorflow as tf
 from functools import partial, wraps, update_wrapper
 from inspect import signature, Parameter
-from tensorflow_addons.image import transform
-import tensorflow_probability as tfp
+from tensorflow.keras.ops.image import affine_transform as transform
 from math import radians, pi
 
 # adds a `cond` attribute to a callable, which provides a static graph
@@ -497,9 +496,8 @@ class Stretch(Reshape):
 
 class Crop(Reshape):
     def __init__(self, *args, a=9., b=1., distort=True, recrop=True, **kw):
-        dist = tfp.distributions.Beta(a, b)
-        iid = lambda: dist.sample((2,))
-        same = lambda: tf.repeat(dist.sample(), 2)
+        iid = lambda: tf.keras.random.beta((2,), a, b)
+        same = lambda: tf.repeat(tf.keras.random.beta((1,), a, b), 2)
         ones = lambda: tf.constant([1., 1.])
         self.crop_sample = ones if not recrop else iid if distort else same
         self.distort = distort
