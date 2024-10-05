@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from src.utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
-    PresetFlag, cli_builder, relpath, Checkpointer, RequiredLength
+    PresetFlag, cli_builder, relpath, Checkpointer, RequiredLength, Default
 )
 from src.preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
@@ -92,7 +92,7 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None, profile=(0,)):
+                 resume=None, profile=(0,), supervised_mapping="one_hot"):
         self.batch, self.learning_rate = batch, learning_rate
         self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
@@ -100,6 +100,7 @@ class Trainer:
         self.step = tf.Variable(0, dtype=tf.int32, name="step")
         self.epoch = tf.Variable(0, dtype=tf.int32, name="epoch")
         self.profile = profile[0] if len(profile) == 1 else tuple(profile)
+        self.mapper = supervised_mapping
 
         self.distribute(*parse_strategy(distribute))
         if resume is not None:
@@ -134,8 +135,18 @@ class Trainer:
 
     # given a preprocessing function, sets the behavior for how to apply it
     # defaults to classification mapping
-    def mapper(self, f):
+    mapper = "one_hot"
+
+    @property
+    def preprocessor(self):
+        return getattr(self, "_mapper_" + self.mapper) \
+                if isinstance(self.mapper, str) else self.mapper
+
+    def _mapper_one_hot(self, f):
         return lambda x, y: (f(x), tf.one_hot(y, self.outputs))
+
+    def _mapper_mask(self, f):
+        return f
 
     # batches and preprocesses to train and optionally validation sets
     def preprocess(self, train, validation=None):
@@ -146,11 +157,11 @@ class Trainer:
             train, validation = map(tpu_prep, (train, validation))
 
         self.dataset = self.dataset.shuffle(self.batch * 8).map(
-            self.mapper(train), tune).batch(self.batch, True).prefetch(
+            self.preprocessor(train), tune).batch(self.batch, True).prefetch(
                 tune).with_options(options)
 
         if validation is not None and self.validation is not None:
-            self.validation = self.validation.map(self.mapper(
+            self.validation = self.validation.map(self.preprocessor(
                 validation), tune).batch(self.batch, True).prefetch(
                     tune).with_options(options)
 
@@ -202,15 +213,19 @@ class TFDSTrainer(Trainer):
             "default directory for TFDS data, supports GCS buckets"))
         super().cli(parser)
 
+    ds_defaults = {"ref_coco": {"supervised_mapping": "mask"}}
     @cli_builder
     def __init__(self, dataset, data_dir=None, **kw):
-        self.builder(dataset, data_dir)
-        data, info = tfds.load(dataset, data_dir=data_dir, with_info=True,
-                               shuffle_files=True, as_supervised=True)
+        data, info = self.as_dataset(
+                dataset, data_dir=data_dir, as_supervised=True)
         self.dataset, self.validation = data["train"], data["test"]
         self.outputs = info.features["label"].num_classes
         self.length = info.splits["train"].num_examples
-        super().__init__(**kw)
+        defaults = self.ds_defaults.get(dataset, {})
+        defaults = {
+                k: v for k, v in defaults.items()
+                if k not in kw or kw[k] is Default}
+        super().__init__(**{**kw, **defaults})
 
     @classmethod
     def builder(cls, dataset, data_dir):
@@ -317,11 +332,16 @@ class TFDSTrainer(Trainer):
         refer_path = data_root / "refer-master"
         with open(cocoapi / "setup.py", "r") as fp:
             diff = fp.read().replace("'-Wno-cpp', '-Wno-unused-function', ", "")
+        diff = re.sub(
+                "ext_modules ?= ?ext_modules",
+                "ext_modules = cythonize(ext_modules)", diff)
+        diff = re.sub(
+                "^from setuptools ",
+                "from Cython.Build import cythonize\nfrom setuptools ", diff)
         with open(cocoapi / "setup.py", "w") as fp:
             fp.write(diff)
         with open(refer_path / "refer.py", "r") as fp:
-            py2 = re.sub("", "", fp.read())\
-                    .replace("cPickle", "pickle")\
+            py2 = fp.read().replace("cPickle", "pickle")\
                     .replace("import skimage.io as io", "")\
                     .replace("pickle.load(open(ref_file, 'r'))",
                              "pickle.load(open(ref_file, 'rb'))")\
@@ -349,18 +369,19 @@ class TFDSTrainer(Trainer):
 
     @classmethod
     def as_dataset(cls, dataset, data_dir, **kw):
-        cls.builder(dataset, data_dir)
         if hasattr(cls, "_tf_dataset_" + dataset):
-            return getattr(cls, "_tf_dataset_" + dataset)(data_dir)
+            return getattr(cls, "_tf_dataset_" + dataset)(data_dir, **kw)
         else:
+            cls.builder(dataset, data_dir)
             return tfds.load(
                     dataset, data_dir=data_dir, with_info=True,
                     shuffle_files=True, **kw)
 
     @classmethod
-    def _tf_dataset_ref_coco(cls, data_dir):
+    def _tf_dataset_ref_coco(cls, data_dir, as_supervised=False, **kw):
         data_source = tfds.data_source(
-                "ref_coco", split="train", data_dir=data_dir)
+                "ref_coco", split="train", data_dir=data_dir,
+                download_and_prepare_kwargs=cls.builder("ref_coco", data_dir))
         info = data_source.dataset_info
         data = tf.data.Dataset.from_generator(
                 lambda: (
@@ -375,6 +396,8 @@ class TFDSTrainer(Trainer):
                     "label": tf.TensorSpec((None,), dtype=tf.int64)})
         data = data.map(lambda x: {**x, "mask": tf.transpose(
                 tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
+        if as_supervised:
+            data = data.map(lambda x: (x["image"], x["mask"]))
         return data, info
 
 class RandAugmentTrainer(Trainer):

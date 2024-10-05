@@ -38,8 +38,8 @@ def preview(dataset="imagenette/320px-v2", pad=False, augment=True, size=224,
 
 def preview_cli(parser):
     parser.add_argument("dataset", nargs="?", help=(
-        'choose a TFDS dataset to augment, must have "image" key and a "train"'
-        ' split'))
+        'choose a TFDS dataset to augment, must have "image" key and a "train" '
+        'split'))
     parser.add_argument("--job-dir", help=(
         "directory to write the output image to"))
     parser.add_argument("--fname", help="output file name")

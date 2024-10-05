@@ -12,6 +12,7 @@ class HelpFormatter(argparse.HelpFormatter):
         else:
             return super()._format_args(action, default_metavar)
 
+# TODO: since this was written, Python started supporting Ellipsis as defaults
 class Default:
     pass
 
