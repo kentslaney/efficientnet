@@ -213,14 +213,17 @@ class TFDSTrainer(Trainer):
             "default directory for TFDS data, supports GCS buckets"))
         super().cli(parser)
 
+    @property
+    def outputs(self):
+        return self.info.features["label"].num_classes
+
     ds_defaults = {"ref_coco": {"supervised_mapping": "mask"}}
     @cli_builder
     def __init__(self, dataset, data_dir=None, **kw):
         data, info = self.as_dataset(
                 dataset, data_dir=data_dir, as_supervised=True)
-        self.dataset, self.validation = data["train"], data["test"]
-        self.outputs = info.features["label"].num_classes
-        self.length = info.splits["train"].num_examples
+        self.dataset, self.validation = data["train"], data["validation"]
+        self.info, self.length = info, info.splits["train"].num_examples
         defaults = self.ds_defaults.get(dataset, {})
         defaults = {
                 k: v for k, v in defaults.items()
@@ -378,27 +381,36 @@ class TFDSTrainer(Trainer):
                     shuffle_files=True, **kw)
 
     @classmethod
-    def _tf_dataset_ref_coco(cls, data_dir, as_supervised=False, **kw):
+    def _tf_dataset_ref_coco(
+            cls, data_dir, as_supervised=False, split=None, **kw):
+        def body(data_source):
+            info = data_source.dataset_info
+            data = tf.data.Dataset.from_generator(
+                    lambda: (
+                        {
+                            "image": i["image"], "mask": i["objects"]["mask"],
+                            "label": i["objects"]["label"]}
+                        for i in data_source),
+                    output_signature={
+                        "image": tf.TensorSpec((None, None, 3), dtype=tf.uint8),
+                        "mask": tf.TensorSpec(
+                            (None, None, None, 3), dtype=tf.uint8),
+                        "label": tf.TensorSpec((None,), dtype=tf.int64)})
+            data = data.map(lambda x: {**x, "mask": tf.transpose(
+                    tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
+            if as_supervised:
+                data = data.map(lambda x: (x["image"], x["mask"]))
+            return data, info
         data_source = tfds.data_source(
-                "ref_coco", split="train", data_dir=data_dir,
+                "ref_coco", split=split, data_dir=data_dir,
                 download_and_prepare_kwargs=cls.builder("ref_coco", data_dir))
-        info = data_source.dataset_info
-        data = tf.data.Dataset.from_generator(
-                lambda: (
-                    {
-                        "image": i["image"], "mask": i["objects"]["mask"],
-                        "label": i["objects"]["label"]}
-                    for i in data_source),
-                output_signature={
-                    "image": tf.TensorSpec((None, None, 3), dtype=tf.uint8),
-                    "mask": tf.TensorSpec(
-                        (None, None, None, 3), dtype=tf.uint8),
-                    "label": tf.TensorSpec((None,), dtype=tf.int64)})
-        data = data.map(lambda x: {**x, "mask": tf.transpose(
-                tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
-        if as_supervised:
-            data = data.map(lambda x: (x["image"], x["mask"]))
-        return data, info
+        if isinstance(split, str):
+            return body(data_source)
+        else:
+            data = {k: body(v) for k, v in data_source.items()}
+            info = next(iter(data.values()))[1]
+            data = {k: v[0] for k, v in data.items()}
+            return data, info
 
 class RandAugmentTrainer(Trainer):
     @classmethod

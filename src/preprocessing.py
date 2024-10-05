@@ -435,6 +435,13 @@ class ApplyTransform(Blended):
                 output_shape=self._output, fill_value=0.,
                 interpolation="NEAREST")[0]
 
+class ApplyTransform(ApplyTransform):
+    def recall(self, mask):
+        if mask.dtype == tf.bool:
+            return tf.cast(super().recall(tf.cast(mask, tf.uint8)), tf.bool)
+        else:
+            return super().recall(mask)
+
 class TranslateX(Transformation):
     @normalize((-0.4, 0, 0.4))
     def call(self, im, m):
@@ -555,8 +562,12 @@ class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
 class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
     pass
 
-class PrepStretched(Pipeline, Convert01, Stretch, Reformat):
+class PipelineCaller(Pipeline):
+    def __call__(self, im, mask=None):
+        return super().__call__(im), self.recall(mask)
+
+class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
     pass
 
-class PrepCropped(Pipeline, Convert01, CenterCrop, Reformat):
+class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
     pass
