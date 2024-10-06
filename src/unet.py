@@ -132,7 +132,7 @@ class InstanceLoss(tf.keras.Loss):
         prefix, postfix = ((None,) * 2), 2 if self.channel == 1 else 1
         prefix, postfix = prefix[:postfix], prefix[postfix:]
         r, c = tf.meshgrid(tf.range(max_r), tf.range(max_c))
-        r, c = r[*prefix, :, :, *postfix], c[*prefix, :, :, *postfix]
+        r, c = r[(*prefix, :, :, *postfix)], c[(*prefix, :, :, *postfix)]
         r_, c_ = r + delta_r, c + delta_c
         oob = tf.keras.ops.logical_or(
                 tf.keras.ops.logical_or(r_ < 0, c_ < 0),
