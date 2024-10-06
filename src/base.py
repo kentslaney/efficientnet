@@ -402,7 +402,7 @@ class TFDSTrainer(Trainer):
                 data = data.map(lambda x: (x["image"], x["mask"]))
             return data, info
         data_source = tfds.data_source(
-                "ref_coco", split=split, data_dir=data_dir,
+                "ref_coco", split=split, data_dir=data_dir, try_gcs=True,
                 download_and_prepare_kwargs=cls.builder("ref_coco", data_dir))
         if isinstance(split, str):
             return body(data_source)
