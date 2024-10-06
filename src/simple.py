@@ -1,7 +1,7 @@
 import tensorflow as tf
 from functools import partial
 from src.base import RandAugmentTrainer, TFDSTrainer
-from src.utils import RequiredLength, Conv2D, cli_builder
+from src.utils import Conv2D, cli_builder
 from src.border import Conv2D as BorderConv2D
 
 class SimpleModel(tf.keras.Model):

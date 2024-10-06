@@ -223,7 +223,7 @@ class WaveletTransform(Augmentation):
         return tf.concat(tf.cos(rescaled), -1)
 
 # renormalize color distributions and optionally transpose the color channel
-# if the data format is NCHW
+# if the data format is NCHW and bitpack boolean masks
 class Reformat(Augmentation):
     required = True
     mean, norm = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
@@ -235,6 +235,15 @@ class Reformat(Augmentation):
     def call(self, im):
         im = (im - self.mean) / self.norm
         return im if self.channels_last else tf.transpose(im, [2, 0, 1])
+
+    def recall(self, mask):
+        assert mask.dtype == tf.bool
+        mask = tf.cast(mask, tf.int32)
+        size = tf.shape(mask)[2]
+        tf.debugging.Assert(size <= 26, [size])
+        mask *= 2 ** (5 + tf.range(size)[None, None, :])
+        mask = tf.keras.ops.sum(mask, 2) + size
+        return mask[(..., None) if self.channels_last else (None,)]
 
 # adjustments
 # linear combination of two images, subclass' call method has to return a tuple
@@ -429,18 +438,13 @@ class ApplyTransform(Blended):
         return im[..., -1:], self.replace, im[..., :-1]
 
     def recall(self, mask):
+        mask = super().recall(mask)
         flat = tf.reshape(self._transform, (-1,))
+        dim4, undo = [None] * (4 - mask.ndim), [0] * (4 - mask.ndim)
         return tf.raw_ops.ImageProjectiveTransformV3(
-                images=mask[None], transforms=(flat[:-1] / flat[-1])[None],
-                output_shape=self._output, fill_value=0.,
-                interpolation="NEAREST")[0]
-
-class ApplyTransform(ApplyTransform):
-    def recall(self, mask):
-        if mask.dtype == tf.bool:
-            return tf.cast(super().recall(tf.cast(mask, tf.uint8)), tf.bool)
-        else:
-            return super().recall(mask)
+                images=mask[dim4], transforms=(flat[:-1] / flat[-1])[dim4],
+                output_shape=self._output, fill_value=0,
+                interpolation="NEAREST")[undo]
 
 class TranslateX(Transformation):
     @normalize((-0.4, 0, 0.4))
@@ -564,6 +568,8 @@ class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
 
 class PipelineCaller(Pipeline):
     def __call__(self, im, mask=None):
+        if mask is None:
+            return super().__call__(im)
         return super().__call__(im), self.recall(mask)
 
 class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):

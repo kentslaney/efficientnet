@@ -6,6 +6,7 @@ from src.utils import TPUBatchNormalization, RequiredLength, cli_builder
 from src.border import Conv2D, DepthwiseConv2D
 from src.mbconv import MBConv
 from src.simple import SimpleTrainer
+from src.unet import UNetTrainer
 
 MovingAverage = ExponentialMovingAverage(0.99)
 
@@ -76,4 +77,5 @@ cli_names = {
     "base": EfficientnetTrainer,
     "border": BorderTrainer,
     "simple": SimpleTrainer,
+    "unet": UNetTrainer,
 }

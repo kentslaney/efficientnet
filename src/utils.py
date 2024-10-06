@@ -189,3 +189,30 @@ class Checkpointer(tf.keras.callbacks.Callback):
         path = tf.train.latest_checkpoint(base)
         self.ckpt.restore(path)
         return path
+
+def perimeter_pixel(radius, i):
+    """
+    https://g.co/gemini/share/f65c2c57321b
+
+    Given a random number (i) from 0 to 8 times the radius of a square
+    centered at pixel (0, 0), find the coordinates of a uniformly
+    distributed pixel along the perimeter using tf.where.
+
+    Args:
+        radius: The radius of the square.
+        i: The random number representing a position along the perimeter.
+
+    Returns:
+        A tuple representing the (x, y) coordinates of the pixel.
+    """
+    side_length = 2 * radius
+
+    x = tf.where(i < side_length, i - radius,
+            tf.where(i < 2 * side_length, radius, tf.where(
+                i < 3 * side_length, radius - (i - 2 * side_length), -radius)))
+
+    y = tf.where(i < side_length, radius,
+            tf.where(i < 2 * side_length, radius - (i - side_length), tf.where(
+                i < 3 * side_length, -radius, (i - 3 * side_length) - radius)))
+
+    return x, y
