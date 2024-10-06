@@ -168,7 +168,7 @@ class WarmedExponential(tf.keras.callbacks.Callback):
             x = (tf.cast(self.step, tf.float32) + self.freq / 2) / self.units
             lr = self.scale * x / self.warmup if x < self.warmup else \
                 self.scale * self.decay ** (x - self.warmup)
-            self.model.optimizer.lr.assign(lr)
+            self.model.optimizer.learning_rate.assign(lr)
 
 class LRTensorBoard(tf.keras.callbacks.TensorBoard):
     def on_epoch_end(self, epoch, logs=None):

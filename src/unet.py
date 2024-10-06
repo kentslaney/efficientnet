@@ -150,7 +150,8 @@ class InstanceLoss(tf.keras.Loss):
         sample = (y_sample - y_ref) ** 2 * tf.where(y_obj == y_cmp, 1., -1.)
         sample = tf.keras.ops.sum(sample)
 
-        return (std + self.sample_coefficient * sample) / tf.shape(y_true)[0]
+        return (std + self.sample_coefficient * sample) / tf.cast(
+                tf.shape(y_true)[0], tf.float32)
 
 class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
@@ -158,8 +159,7 @@ class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
 
     @cli_builder
     def __init__(self, learning_rate=1e-6, dataset="ref_coco", size=224, **kw):
-        super().__init__(learning_rate=learning_rate, decay=decay,
-                         augment=augment, dataset=dataset, size=size, **kw)
-
+        super().__init__(
+                learning_rate=learning_rate, dataset=dataset, size=size, **kw)
         self.model = ResUNet(self.data_format)
         self.compile(InstanceLoss(self.data_format))
