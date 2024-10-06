@@ -139,7 +139,7 @@ class InstanceLoss(tf.keras.Loss):
                 tf.keras.ops.logical_or(r_ < 0, c_ < 0),
                 tf.keras.ops.logical_or(r_ >= max_r, c_ >= max_c))
         r_, c_ = tf.where(oob, r, r_), tf.where(oob, c, c_)
-        batch_indices = tf.range(sample_shape[0])[:, *(None,) * 3]
+        batch_indices = tf.range(sample_shape[0])[(slice(None), *(None,) * 3)]
         batch_indices = tf.broadcast_to(batch_indices, oob.shape)
         coords = tf.stack((batch_indices, r_, c_), -1)
         y_sample = tf.gather_nd(y_pred, coords)
