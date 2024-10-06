@@ -377,7 +377,7 @@ class TFDSTrainer(Trainer):
         else:
             cls.builder(dataset, data_dir)
             return tfds.load(
-                    dataset, data_dir=data_dir, with_info=True,
+                    dataset, data_dir=data_dir, with_info=True, try_gcs=True,
                     shuffle_files=True, **kw)
 
     @classmethod
