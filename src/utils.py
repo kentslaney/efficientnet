@@ -83,6 +83,9 @@ def RequiredLength(minimum, maximum):
 def PresetFlag(*preset):
     class PresetFlag(argparse.Action):
         def __call__(self, parser, namespace, values, option_string=None):
+            if self.default is not None or len(values) == 0:
+                setattr(namespace, self.dest, list(preset) + self.default)
+                return
             setattr(namespace, self.dest, list(preset) + values)
     return PresetFlag
 
@@ -92,8 +95,8 @@ helper = lambda parser: lambda: parser.parse_args(["-h"])
 def parse_strategy(distribute):
     distribute, *devices = distribute or [None]
     assert not distribute or hasattr(tf.distribute, distribute)
-    devices = None if len(devices) == 1 else \
-        devices[1] if distribute == "OneDeviceStrategy" else devices
+    devices = None if len(devices) == 0 else \
+        devices[0] if distribute == "OneDeviceStrategy" else devices
 
     tpu = distribute == "TPUStrategy"
     if tpu:

@@ -1,4 +1,5 @@
 tensorflow
+tf-keras
 tensorflow-datasets
 tensorflow-probability
 opencv-python

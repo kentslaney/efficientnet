@@ -76,7 +76,7 @@ class Trainer:
                 "behavior"))
         group.add_argument(
             "--tpu", metavar="DEVICE", nargs="*", dest="distribute",
-            action=PresetFlag("TPUStrategy"), help=(
+            default=["local"], action=PresetFlag("TPUStrategy"), help=(
                 "use TPUStrategy for distribution; equivalent to --distribute "
                 "TPUStrategy [DEVICE...]"))
         group.add_argument(
