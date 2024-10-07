@@ -1,5 +1,4 @@
 import sys, os, unittest
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from src.preprocessing import RandAugmentCropped, RandAugmentPadded

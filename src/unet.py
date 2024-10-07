@@ -18,7 +18,8 @@ class ResUNet(tf.keras.Model):
         self.channel = -1 if data_format == 'channels_last' else 1
         self.bn = partial(tf.keras.layers.BatchNormalization, axis=self.channel)
         self.act = lambda: tf.keras.layers.Activation("relu")
-        self.upsample = lambda: tf.keras.layers.UpSampling2D((2, 2))
+        self.upsample = lambda: tf.keras.layers.UpSampling2D(
+                (2, 2), data_format=data_format)
         self.build([16, 32, 64, 128, 256])
 
     def conv_block(self, filters, strides):
@@ -122,8 +123,9 @@ class InstanceLoss(tf.keras.Loss):
         std = tf.keras.ops.sum(std)
 
         # geometric L_\inf pixel distribution as positive/negative samples
-        sample_shape = y_pred.shape[:1] + tuple(
-                y_pred.shape[i] for i in self.spacial) + (self.samples,)
+        sample_shape = tuple(
+                self.samples if i == self.channel else y_pred.shape[i]
+                for i in range(y_pred.ndim))
         r = 1 + self.dist.sample(sample_shape)
         r = tf.cast(r[..., 0], tf.int32)
         theta = tf.keras.random.randint(sample_shape, 0, 2 ** 31 - 1)
@@ -142,9 +144,15 @@ class InstanceLoss(tf.keras.Loss):
         batch_indices = tf.range(sample_shape[0])[(slice(None), *(None,) * 3)]
         batch_indices = tf.broadcast_to(batch_indices, oob.shape)
         coords = tf.stack((batch_indices, r_, c_), -1)
+        tile = [self.samples if i == self.channel else 1 for i in range(5)]
+        sample_idx = tf.reshape(tf.range(self.samples), tile[:-1])
+        sample_idx = tf.broadcast_to(sample_idx, sample_shape)[..., None]
+        coords = tf.concat((
+            coords[..., :self.channel], sample_idx,
+            coords[..., self.channel:]), -1)
+        coords = tf.expand_dims(coords, self.channel + 1)
         y_sample = tf.gather_nd(y_pred, coords)
         y_cmp = tf.gather_nd(y_true, coords)
-        tile = [self.samples if i == self.channel else 1 for i in range(5)]
         y_ref = tf.keras.ops.tile(tf.expand_dims(y_pred, self.channel), tile)
         y_obj = tf.keras.ops.tile(tf.expand_dims(y_true, self.channel), tile)
         sample = (y_sample - y_ref) ** 2 * tf.where(y_obj == y_cmp, 1., -1.)
