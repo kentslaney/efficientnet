@@ -93,8 +93,8 @@ class ResUNet(tf.keras.Model):
         return self.loss.call(y, y_pred)
 
 class InstanceLoss(tf.keras.Loss):
-    # sample coefficient starting point = 100 / (size ** 2 * samples)
-    def __init__(self, data_format, sample_coefficient=4e-4, samples=5, mean=3):
+    # sample_coefficient is the ratio of local variance to object variance
+    def __init__(self, data_format, sample_coefficient=1, samples=5, mean=3):
         super().__init__()
         self.data_format = data_format
         self.dist = tfp.distributions.Geometric(probs=(1 / mean,))
@@ -107,20 +107,18 @@ class InstanceLoss(tf.keras.Loss):
         tile = [y_pred.shape[i] if i == self.channel else 1 for i in range(4)]
         tile = tile[1:]
         @tf.function
-        def outer(i):
-            mask, pred, std = y_true[i], y_pred[i], 0.
+        def outer(arg):
+            (mask, pred), std = arg, 0.
             for j in tf.range(mask[0, 0, 0] & 31):
                 obj = tf.cast(mask & 2 ** (5 + j), tf.bool)[..., 0]
                 obj = tf.keras.ops.expand_dims(obj, self.channel - 1)
                 obj = tf.tile(obj, tile)
                 obj = tf.gather_nd(pred, tf.where(obj))
-                std += tf.where(tf.size(obj) == 0, 0., tf.keras.ops.sum(
+                std += tf.where(tf.size(obj) == 0, 0., tf.keras.ops.mean(
                     tf.keras.ops.std(obj)))
-            return tf.keras.ops.sum(std)
-        std = tf.map_fn(
-                outer, tf.range(tf.shape(y_true)[0]),
-                fn_output_signature=tf.float32)
-        std = tf.keras.ops.sum(std)
+            return tf.keras.ops.mean(std)
+        std = tf.map_fn(outer, (y_true, y_pred), fn_output_signature=tf.float32)
+        std = tf.keras.ops.mean(std)
 
         # geometric L_\inf pixel distribution as positive/negative samples
         sample_shape = tuple(
@@ -137,12 +135,12 @@ class InstanceLoss(tf.keras.Loss):
         r = r[(*prefix, *(slice(None),) * 2, *postfix)]
         c = c[(*prefix, *(slice(None),) * 2, *postfix)]
         r_, c_ = r + delta_r, c + delta_c
-        oob = tf.keras.ops.logical_or(
-                tf.keras.ops.logical_or(r_ < 0, c_ < 0),
-                tf.keras.ops.logical_or(r_ >= max_r, c_ >= max_c))
-        r_, c_ = tf.where(oob, r, r_), tf.where(oob, c, c_)
+        in_bounds = tf.keras.ops.logical_and(
+                tf.keras.ops.logical_and(r_ > 0, c_ > 0),
+                tf.keras.ops.logical_and(r_ < max_r, c_ < max_c))
+        r_, c_ = tf.where(in_bounds, r_, r), tf.where(in_bounds, c_, c)
         batch_indices = tf.range(sample_shape[0])[(slice(None), *(None,) * 3)]
-        batch_indices = tf.broadcast_to(batch_indices, oob.shape)
+        batch_indices = tf.broadcast_to(batch_indices, in_bounds.shape)
         coords = tf.stack((batch_indices, r_, c_), -1)
         tile = [self.samples if i == self.channel else 1 for i in range(5)]
         sample_idx = tf.reshape(tf.range(self.samples), tile[:-1])
@@ -156,10 +154,10 @@ class InstanceLoss(tf.keras.Loss):
         y_ref = tf.keras.ops.tile(tf.expand_dims(y_pred, self.channel), tile)
         y_obj = tf.keras.ops.tile(tf.expand_dims(y_true, self.channel), tile)
         sample = (y_sample - y_ref) ** 2 * tf.where(y_obj == y_cmp, 1., -1.)
-        sample = tf.keras.ops.sum(sample)
+        sample = tf.keras.ops.sum(sample) / tf.cast(
+                tf.keras.ops.sum(in_bounds), tf.float32)
 
-        return (std + self.sample_coefficient * sample) / tf.cast(
-                tf.shape(y_true)[0], tf.float32)
+        return std + self.sample_coefficient * sample
 
 class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
