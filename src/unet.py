@@ -109,7 +109,8 @@ class InstanceLoss(tf.keras.Loss):
         tile = tile[1:]
         @tf.function
         def outer(arg):
-            (mask, pred), std, lim = arg, 0., mask[0, 0, 0] & 31
+            (mask, pred), std = arg, 0.
+            lim = mask[0, 0, 0] & 31
             for j in tf.range(31):
                 if j >= lim:
                     continue
