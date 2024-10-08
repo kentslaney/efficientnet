@@ -442,7 +442,7 @@ class ApplyTransform(Blended):
         flat = tf.reshape(self._transform, (-1,))
         return super().recall(tf.raw_ops.ImageProjectiveTransformV3(
                 images=mask[None, ..., None],
-                transforms=(flat[:-1] / flat[-1])[None, ..., None],
+                transforms=(flat[:-1] / flat[-1])[None],
                 output_shape=self._output, fill_value=0,
                 interpolation="NEAREST")[0, ..., 0])
 
