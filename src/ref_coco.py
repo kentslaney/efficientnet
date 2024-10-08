@@ -151,7 +151,8 @@ class RefCOCOTrainer:
             file_path = str(tf.io.gfile.join(info.data_dir, fname))
             file_path = tf.io.gfile.glob(file_path)
             if file_path:
-                return tf.data.TFRecordDataset(file_path).map(decode_fn)
+                return tf.data.TFRecordDataset(file_path).take(
+                        info.splits[split].num_examples).map(decode_fn)
         def split_tfrecord(split, iterator, info):
             total, shards = info.splits[split].num_examples, 10
             iterator = iter(iterator.as_numpy_iterator())
