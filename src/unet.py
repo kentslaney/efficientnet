@@ -94,6 +94,7 @@ class ResUNet(tf.keras.Model):
 
 class InstanceLoss(tf.keras.Loss):
     # sample_coefficient is the ratio of local variance to object variance
+    # mean is of L_\inf distance of local samples (geometrically distributed)
     def __init__(self, data_format, sample_coefficient=1, samples=5, mean=3):
         super().__init__()
         self.data_format = data_format
