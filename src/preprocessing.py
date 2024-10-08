@@ -439,13 +439,12 @@ class ApplyTransform(Blended):
         return im[..., -1:], self.replace, im[..., :-1]
 
     def recall(self, mask):
-        mask = super().recall(mask)
         flat = tf.reshape(self._transform, (-1,))
-        dim4, undo = [None] * (4 - mask.ndim), [0] * (4 - mask.ndim)
-        return tf.raw_ops.ImageProjectiveTransformV3(
-                images=mask[dim4], transforms=(flat[:-1] / flat[-1])[dim4],
+        return super().recall(tf.raw_ops.ImageProjectiveTransformV3(
+                images=mask[None, ..., None],
+                transforms=(flat[:-1] / flat[-1])[None, ..., None],
                 output_shape=self._output, fill_value=0,
-                interpolation="NEAREST")[undo]
+                interpolation="NEAREST")[0, ..., 0])
 
 class TranslateX(Transformation):
     @normalize((-0.4, 0, 0.4))
