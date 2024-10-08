@@ -6,8 +6,8 @@ from src.utils import strftime, helper, ArgumentParser, cli_builder, relpath
 from src.base import TFDSTrainer
 from src.trainers import cli_names
 
-tf.config.optimizer.set_jit(True)
-os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
+# tf.config.optimizer.set_jit(True)
+# os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
 
 def train_cli(parser):
     subparsers = parser.add_subparsers()

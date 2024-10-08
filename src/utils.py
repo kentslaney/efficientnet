@@ -111,7 +111,10 @@ def parse_strategy(distribute):
     return distribute, tpu
 
 def tpu_prep(f):
-    return lambda im: tf.cast(tf.transpose(f(im), [1, 2, 3, 0]), tf.bfloat16)
+    def body(im, mask=None):
+        im, mask = f(im, mask)
+        return tf.cast(im, tf.bfloat16), mask
+    return body
 
 class TPUBatchNormalization(tf.keras.layers.BatchNormalization):
     def __init__(self, fused=False, name="BatchNormalization", **kw):

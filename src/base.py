@@ -133,7 +133,7 @@ class Trainer:
             self.batch *= strategy.num_replicas_in_sync
         self.learning_rate *= self.batch
         self.opt = self.opt(self.learning_rate)
-        self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
+        # self.opt = tf.tpu.CrossShardOptimizer(self.opt) if tpu else self.opt
 
     # given a preprocessing function, sets the behavior for how to apply it
     # defaults to classification mapping
