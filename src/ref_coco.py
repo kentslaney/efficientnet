@@ -138,7 +138,7 @@ class RefCOCOTrainer:
                 "label": tf.TensorSpec((None,), dtype=tf.int64)}
         parse_sig = {
                 **output_signature, "mask": tf.TensorSpec(
-                    (None, None, 1), dtype=tf.int32)}
+                    (None, None), dtype=tf.int32)}
         def decode_fn(record_bytes):
             res = tf.io.parse_single_example(record_bytes, {
                 k: tf.io.FixedLenFeature([], tf.string)
@@ -187,7 +187,7 @@ class RefCOCOTrainer:
             data = data.map(lambda x: {**x, "mask": tf.transpose(
                     tf.keras.ops.any(x['mask'], -1), (1, 2, 0))})
             if bitpack:
-                fmt = Reformat(data_format="channels_last")
+                fmt = Reformat()
                 data = data.map(lambda x: {**x, "mask": fmt.recall(x["mask"])})
             return data, info
         sig = tf.function(input_signature=[tf.data.DatasetSpec(parse_sig)])

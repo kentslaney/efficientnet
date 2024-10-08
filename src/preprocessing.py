@@ -243,8 +243,8 @@ class Reformat(Augmentation):
             tf.debugging.Assert(size <= 26, [size])
             mask *= 2 ** (5 + tf.range(size)[None, None, :])
             mask = tf.keras.ops.sum(mask, 2) + size
-            return mask[(..., None) if self.channels_last else (None,)]
-        return mask
+            return mask
+        return mask[(..., None) if self.channels_last else (None,)]
 
 # adjustments
 # linear combination of two images, subclass' call method has to return a tuple
@@ -374,7 +374,7 @@ class Cutout(Augmentation):
 
     def recall(self, mask):
         initial, self.replace = self.replace, tf.zeros((1, 1, 1), mask.dtype)
-        res = super().recall(self.call(mask, self.m))
+        res = self.call(super().recall(mask), self.m)
         self.replace = initial
         return res
 
@@ -394,7 +394,7 @@ class Flip(Augmentation):
         return im if self.flipped else tf.image.flip_left_right(im)
 
     def recall(self, mask):
-        return super().recall(self.call(mask, self.m))
+        return self.call(super().recall(mask), self.m)
 
 class Adjust(
         Flip, Equalize, Posterize, Convert01, AutoContrast, Invert, Solarize,

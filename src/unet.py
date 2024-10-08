@@ -107,6 +107,11 @@ class InstanceLoss(tf.keras.Loss):
         # penalize each labeled object's latent space variance
         tile = [y_pred.shape[i] if i == self.channel else 1 for i in range(4)]
         tile = tile[1:]
+        recast = [
+                y_true.shape[i] if i == self.channel else y_pred.shape[i]
+                for i in range(y_pred.ndim)]
+        y_true = tf.function(input_signature=[tf.TensorSpec(recast, tf.int32)])(
+                lambda x: x)(y_true)
         @tf.function
         def outer(arg):
             (mask, pred), std = arg, 0.
