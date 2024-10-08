@@ -237,13 +237,14 @@ class Reformat(Augmentation):
         return im if self.channels_last else tf.transpose(im, [2, 0, 1])
 
     def recall(self, mask):
-        assert mask.dtype == tf.bool
-        mask = tf.cast(mask, tf.int32)
-        size = tf.shape(mask)[2]
-        tf.debugging.Assert(size <= 26, [size])
-        mask *= 2 ** (5 + tf.range(size)[None, None, :])
-        mask = tf.keras.ops.sum(mask, 2) + size
-        return mask[(..., None) if self.channels_last else (None,)]
+        if mask.dtype == tf.bool:
+            mask = tf.cast(mask, tf.int32)
+            size = tf.shape(mask)[2]
+            tf.debugging.Assert(size <= 26, [size])
+            mask *= 2 ** (5 + tf.range(size)[None, None, :])
+            mask = tf.keras.ops.sum(mask, 2) + size
+            return mask[(..., None) if self.channels_last else (None,)]
+        return mask
 
 # adjustments
 # linear combination of two images, subclass' call method has to return a tuple

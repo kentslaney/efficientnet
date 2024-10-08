@@ -219,3 +219,12 @@ def perimeter_pixel(radius, i):
                 i < 3 * side_length, -radius, (i - 3 * side_length) - radius)))
 
     return x, y
+
+def serialize_tensor_features(values):
+    res = {}
+    for k, value in values.items():
+        serialized_nonscalar = tf.io.serialize_tensor(value)
+        res[k] = tf.train.Feature(
+            bytes_list=tf.train.BytesList(value=[serialized_nonscalar.numpy()]))
+    return tf.train.Example(features=tf.train.Features(feature=res))
+
