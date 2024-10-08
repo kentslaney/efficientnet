@@ -93,14 +93,15 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None, profile=(0,), supervised_mapping="one_hot"):
+                 resume=None, profile=None, supervised_mapping="one_hot"):
         self.batch, self.learning_rate = batch, learning_rate
         self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
         self.should_decay, self.callbacks = decay, []
         self.step = tf.Variable(0, dtype=tf.int32, name="step")
         self.epoch = tf.Variable(0, dtype=tf.int32, name="epoch")
-        self.profile = profile[0] if len(profile) == 1 else tuple(profile)
+        self.profile = None if profile is None else (
+                profile[0] if len(profile) == 1 else tuple(profile))
         self.mapper = supervised_mapping
 
         self.distribute(*parse_strategy(distribute))
@@ -185,8 +186,9 @@ class Trainer:
         else:
             print(f'Writing to training directory {self.path}')
 
-        self.callbacks += [self.tb_callback(
-            logs, update_freq=64, profile_batch=self.profile), ckptr]
+        if self.profile is not None:
+            self.callbacks += [self.tb_callback(
+                logs, update_freq=64, profile_batch=self.profile), ckptr]
 
     # calls outputs and compiles the model using self.opt
     def compile(self, *args, **kw):
