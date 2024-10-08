@@ -109,8 +109,10 @@ class InstanceLoss(tf.keras.Loss):
         tile = tile[1:]
         @tf.function
         def outer(arg):
-            (mask, pred), std = arg, 0.
-            for j in tf.range(mask[0, 0, 0] & 31):
+            (mask, pred), std, lim = arg, 0., mask[0, 0, 0] & 31
+            for j in tf.range(31):
+                if j >= lim:
+                    continue
                 obj = tf.cast(mask & 2 ** (5 + j), tf.bool)[..., 0]
                 obj = tf.keras.ops.expand_dims(obj, self.channel - 1)
                 obj = tf.tile(obj, tile)
