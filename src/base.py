@@ -258,6 +258,16 @@ class TFDSTrainer(RefCOCOTrainer, Trainer):
         files = ("ILSVRC2012_img_train.tar", "ILSVRC2012_img_val.tar")
         cls.gfile_download(data_dir, {url_base: files})
 
+    @classmethod
+    def as_dataset(cls, dataset, data_dir, **kw):
+        if hasattr(cls, "_tf_dataset_" + dataset):
+            return getattr(cls, "_tf_dataset_" + dataset)(data_dir, **kw)
+        else:
+            cls.builder(dataset, data_dir)
+            return tfds.load(
+                    dataset, data_dir=data_dir, with_info=True, try_gcs=True,
+                    shuffle_files=True, **kw)
+
 class RandAugmentTrainer(Trainer):
     @classmethod
     def cli(self, parser):

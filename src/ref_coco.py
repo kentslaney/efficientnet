@@ -119,16 +119,6 @@ class RefCOCOTrainer:
                 manual_dir=str(data_root / "images" / "mscoco" / "images"))}
 
     @classmethod
-    def as_dataset(cls, dataset, data_dir, **kw):
-        if hasattr(cls, "_tf_dataset_" + dataset):
-            return getattr(cls, "_tf_dataset_" + dataset)(data_dir, **kw)
-        else:
-            cls.builder(dataset, data_dir)
-            return tfds.load(
-                    dataset, data_dir=data_dir, with_info=True, try_gcs=True,
-                    shuffle_files=True, **kw)
-
-    @classmethod
     def _tf_dataset_ref_coco(
             cls, data_dir, as_supervised=False, split=None, **kw):
         output_signature={

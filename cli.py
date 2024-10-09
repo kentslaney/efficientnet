@@ -1,8 +1,10 @@
 import sys, os, unittest
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from src.preprocessing import RandAugmentCropped, RandAugmentPadded
-from src.utils import strftime, helper, ArgumentParser, cli_builder, relpath
+from src.preprocessing import (
+        RandAugmentCropped, RandAugmentPadded, PrepStretched)
+from src.utils import (
+        strftime, helper, ArgumentParser, cli_builder, relpath, Default)
 from src.base import TFDSTrainer
 from src.trainers import cli_names
 
@@ -68,6 +70,59 @@ def download_cli(parser):
         "default directory for TFDS data, supports GCS buckets"))
     parser.set_defaults(call=download)
 
+def predict_cli(parser):
+    parser.add_argument("model")
+    parser.add_argument("file_input", nargs="?")
+    parser.add_argument("--dataset-split", nargs=2)
+    parser.add_argument("--job_dir")
+    parser.add_argument("--data_dir")
+    parser.add_argument(
+            "--ckpt", dest="resume", help="defaults to latest in ./jobs")
+    parser.add_argument("--dest", help=(
+            "output npy location, defaults to ckpt/../logs, accepts filenames "
+            "that end in npy"))
+
+    parser.set_defaults(call=predict)
+
+@cli_builder
+def predict(
+        model, file_input=None, dataset_split=(Default, "validation"),
+        resume=None, dest=None, job_dir=None, data_dir=None, idx="*"):
+    if job_dir is None:
+        job_dir = os.path.join(os.path.dirname(__file__), "jobs")
+    if resume is None:
+        job = max(os.listdir(job_dir))
+        query = os.path.join(job_dir, job, "ckpts", f"ckpt-{idx}.index")
+        ckpts = tf.io.gfile.glob(query)
+        idx = list(map(int, (os.path.basename(i)[5:-6] for i in ckpts)))
+        resume = ckpts[max(enumerate(idx), key=lambda x: x[1])[0]]
+        # until idx is supported
+        resume = os.path.join(os.path.dirname(resume), os.path.pardir)
+    if dest is None:
+        # dest = os.path.join(os.path.dirname(resume), os.path.pardir, "logs")
+        dest = os.path.join(resume, "logs")
+    model = cli_names[model](
+            resume=resume, augment=False, dataset=dataset_split[0])
+    if file_input is None:
+        ds, info = model.as_dataset(
+                model.info.name, data_dir, split=dataset_split[1])
+        ex = next(ds.take(1).as_numpy_iterator())
+        im, mask = PrepStretched(shape=model.size)(ex["image"], ex["mask"])
+        breakpoint()
+        if not dest.endswith(".npy"):
+            name = ex.get("filename", ex.get("image/id", strftime())) + ".npy"
+            dest = os.path.join(dest, name)
+    else:
+        import cv2
+        im = cv2.imread(file_input)
+        im = PrepStretched(shape=model.size)(im)
+        if not dest.endswith(".npy"):
+            dest = os.path.join(dest, os.path.basename(file_input) + ".npy")
+    res = model.model(im[None], training=False)[0]
+    import numpy as np
+    np.save(dest, res)
+    print(f"saved result to {dest}")
+
 def test():
     runner = unittest.TextTestResult(sys.stderr, True, 1)
     unittest.defaultTestLoader.discover(relpath()).run(runner)
@@ -79,7 +134,8 @@ def main(parser):
     preview_cli(subparsers.add_parser("preview", help=(
         "Preview an augmented dataset")))
     download_cli(subparsers.add_parser("download", help="Download a dataset"))
-    subparsers.add_parser("test", help="run tests").set_defaults(call=test)
+    predict_cli(subparsers.add_parser("predict", help="Run a model"))
+    subparsers.add_parser("test", help="Run tests").set_defaults(call=test)
     parser.set_defaults(call=helper(parser))
 
     parser.parse_args().caller()
