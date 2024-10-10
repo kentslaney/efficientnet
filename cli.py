@@ -108,7 +108,6 @@ def predict(
                 model.info.name, data_dir, split=dataset_split[1])
         ex = next(ds.take(1).as_numpy_iterator())
         im, mask = PrepStretched(shape=model.size)(ex["image"], ex["mask"])
-        breakpoint()
         if not dest.endswith(".npy"):
             name = ex.get("filename", ex.get("image/id", strftime())) + ".npy"
             dest = os.path.join(dest, name)
@@ -120,6 +119,8 @@ def predict(
             dest = os.path.join(dest, os.path.basename(file_input) + ".npy")
     res = model.model(im[None], training=False)[0]
     import numpy as np
+    if model.data_format == "channels_first":
+        res = np.transpose(res, (1, 2, 0))
     np.save(dest, res)
     print(f"saved result to {dest}")
 
