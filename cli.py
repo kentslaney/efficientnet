@@ -107,14 +107,15 @@ def predict(
         ds, info = model.as_dataset(
                 model.info.name, data_dir, split=dataset_split[1])
         ex = next(ds.take(1).as_numpy_iterator())
+        out = ex["image"]
         im, mask = PrepStretched(shape=model.size)(ex["image"], ex["mask"])
         if not dest.endswith(".npy"):
             name = ex.get("filename", ex.get("image/id", strftime())) + ".npy"
             dest = os.path.join(dest, name)
     else:
         import cv2
-        im = cv2.imread(file_input)
-        im = PrepStretched(shape=model.size)(im)
+        out = cv2.imread(file_input)
+        im = PrepStretched(shape=model.size)(out)
         if not dest.endswith(".npy"):
             dest = os.path.join(dest, os.path.basename(file_input) + ".npy")
     res = model.model(im[None], training=False)[0]
@@ -123,6 +124,7 @@ def predict(
         res = np.transpose(res, (1, 2, 0))
     np.save(dest, res)
     print(f"saved result to {dest}")
+    return out
 
 def test():
     runner = unittest.TextTestResult(sys.stderr, True, 1)
