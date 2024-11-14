@@ -1,14 +1,14 @@
 import os
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from src.utils import (
+from .utils import (
     tpu_prep, WarmedExponential, LRTensorBoard, strftime, parse_strategy,
     PresetFlag, cli_builder, relpath, Checkpointer, RequiredLength, Default
 )
-from src.preprocessing import (
+from .preprocessing import (
     PrepStretched, RandAugmentCropped, RandAugmentPadded
 )
-from src.ref_coco import RefCOCOTrainer
+from .ref_coco import RefCOCOTrainer
 
 class Trainer:
     path, _format, length, validation = None, None, None, None

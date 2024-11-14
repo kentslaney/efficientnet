@@ -4,8 +4,8 @@ import json
 from tqdm import tqdm
 import sys, re, pathlib
 from setuptools import sandbox
-from src.utils import serialize_tensor_features
-from src.preprocessing import Reformat
+from .utils import serialize_tensor_features
+from .preprocessing import Reformat
 
 class RefCOCOTrainer:
     # relative to `pathlib.Path(tfds.__file__).parent` or

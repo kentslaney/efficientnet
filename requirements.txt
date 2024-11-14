@@ -1,9 +1,0 @@
-tensorflow#[and-cuda]# @ https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/tensorflow/tf-2.16.1/tensorflow-2.16.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-#nvidia-tensorrt # TODO: pyproject.toml
-tf-keras
-tensorflow-datasets
-tensorflow-probability
-opencv-python
-matplotlib
-cython
-tqdm

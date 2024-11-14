@@ -1,5 +1,5 @@
 import tensorflow as tf
-from src.border import BorderOffset, BorderReweight, Conv2D
+from .border import BorderOffset, BorderReweight, Conv2D
 import unittest
 
 class TestBorderReweight(unittest.TestCase):

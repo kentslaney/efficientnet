@@ -1,7 +1,7 @@
 import tensorflow as tf
 from functools import partial
-from src.base import RandAugmentTrainer, TFDSTrainer
-from src.utils import RequiredLength, cli_builder, perimeter_pixel
+from .base import RandAugmentTrainer, TFDSTrainer
+from .utils import RequiredLength, cli_builder, perimeter_pixel
 import tensorflow_probability as tfp
 
 class LayerFlags:
@@ -155,8 +155,8 @@ class InstanceLoss(tf.keras.Loss):
         sample_idx = tf.reshape(tf.range(self.samples), tile[:-1])
         sample_idx = tf.broadcast_to(sample_idx, sample_shape)[..., None]
         coords = tf.concat((
-            coords[..., :self.channel], sample_idx,
-            coords[..., self.channel:]), -1)
+                coords[..., :self.channel], sample_idx,
+                coords[..., self.channel:]), -1)
         coords = tf.expand_dims(coords, self.channel + 1)
         y_sample = tf.gather_nd(y_pred, coords)
         y_cmp = tf.gather_nd(y_true, coords)

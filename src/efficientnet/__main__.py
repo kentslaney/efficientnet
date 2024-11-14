@@ -1,12 +1,12 @@
 import sys, os, unittest
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from src.preprocessing import (
+from .preprocessing import (
         RandAugmentCropped, RandAugmentPadded, PrepStretched)
-from src.utils import (
+from .utils import (
         strftime, helper, ArgumentParser, cli_builder, relpath, Default)
-from src.base import TFDSTrainer
-from src.trainers import cli_names
+from .base import TFDSTrainer
+from .trainers import cli_names
 
 # tf.config.optimizer.set_jit(True)
 # os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
@@ -140,8 +140,22 @@ def main(parser):
     predict_cli(subparsers.add_parser("predict", help="Run a model"))
     subparsers.add_parser("test", help="Run tests").set_defaults(call=test)
     parser.set_defaults(call=helper(parser))
+    parser.add_argument("--absl", action="store_true")
 
-    parser.parse_args().caller()
+    args = parser.parse_args()
+    if args.absl:
+        return absl_cli()
+    else:
+        return args.caller()
+
+def absl_cli():
+    from absl.flags import argparse_flags
+    from src.utils import CallParser
+
+    class ArgumentParser(CallParser, argparse_flags.ArgumentParser):
+        pass
+
+    return main(ArgumentParser())
 
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(__file__))

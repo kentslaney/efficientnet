@@ -1,6 +1,6 @@
 import tensorflow as tf
 from functools import partial
-from src.utils import Conv2D
+from .utils import Conv2D
 
 class MBConv(tf.keras.layers.Layer):
     conv = Conv2D

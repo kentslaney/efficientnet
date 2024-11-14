@@ -1,12 +1,12 @@
 import tensorflow as tf
 from tensorflow.train import ExponentialMovingAverage
-from src.efficientnet import Classifier, Embedding
-from src.base import RandAugmentTrainer, TFDSTrainer
-from src.utils import TPUBatchNormalization, RequiredLength, cli_builder
-from src.border import Conv2D, DepthwiseConv2D
-from src.mbconv import MBConv
-from src.simple import SimpleTrainer
-from src.unet import UNetTrainer
+from .efficientnet import Classifier, Embedding
+from .base import RandAugmentTrainer, TFDSTrainer
+from .utils import TPUBatchNormalization, RequiredLength, cli_builder
+from .border import Conv2D, DepthwiseConv2D
+from .mbconv import MBConv
+from .simple import SimpleTrainer
+from .unet import UNetTrainer
 
 MovingAverage = ExponentialMovingAverage(0.99)
 

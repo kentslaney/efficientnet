@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[project]
+name = "efficientnet"
+version = "0.2.1"
+dependencies = [
+    "tensorflow",
+    "tf-keras",
+    "tensorflow-datasets",
+    "tensorflow-probability",
+    "opencv-python",
+    "matplotlib",
+    "cython",
+    "tqdm",
+]
+readme = "README.md"
+
+[project.optional-dependencies]
+and-cuda = ["tensorflow[and-cuda]", "nvidia-tensorrt"]
+web-tpu = ["tensorflow @ https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/tensorflow/tf-2.16.1/tensorflow-2.16.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"]

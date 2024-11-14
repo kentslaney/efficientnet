@@ -1,5 +1,5 @@
 import tensorflow as tf
-from src.utils import Conv2D as SpecializedConv2D
+from .utils import Conv2D as SpecializedConv2D
 
 def nslice(rank, dim):
     start = tuple(slice(None) for i in range(dim))
