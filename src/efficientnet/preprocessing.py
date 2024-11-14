@@ -572,6 +572,9 @@ class PipelineCaller(Pipeline):
             return super().__call__(im)
         return super().__call__(im), self.recall(mask)
 
+class PrepEye(PipelineCaller, Convert01, Reformat):
+    pass
+
 class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
     pass
 
