@@ -93,7 +93,8 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None, profile=(0,), supervised_mapping="one_hot"):
+                 resume=None, profile=(0,), supervised_mapping="one_hot",
+                 absl=None):
         self.batch, self.learning_rate = batch, learning_rate
         self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor

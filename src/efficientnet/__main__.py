@@ -80,9 +80,8 @@ def predict_cli(parser):
     parser.add_argument("--dest", help=(
             "output npy location, defaults to ckpt/../logs, accepts filenames "
             "that end in npy"))
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("file_input", nargs="*")
-    group.add_argument("--n", nargs="?", type=int, default=0)
+    parser.add_argument("file_input", nargs="*")
+    parser.add_argument("--n", nargs="?", type=int, default=0)
 
     parser.set_defaults(call=predict)
 
