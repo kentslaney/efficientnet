@@ -19,23 +19,41 @@ def train_cli(parser):
 
 @cli_builder
 def preview(dataset="imagenette/320px-v2", pad=False, augment=True, size=224,
-            data_dir=None, job_dir=None, fname="{time}.png", **kw):
-    data, info = TFDSTrainer.as_dataset(dataset, data_dir, split="train")
+            data_dir=None, job_dir=None, fname="{time}{index}.png", n=None,
+            split="train", **kw):
+    data, info = TFDSTrainer.as_dataset(dataset, data_dir, split=split)
 
     if augment:
         aug = RandAugmentPadded if pad else RandAugmentCropped
-        aug = aug((size, size), data_format="channels_last")
-        data = data.map(lambda x: {**x, "image": tf.clip_by_value(
-            aug(x["image"]) / 5 + 0.5, 0., 1.)})
+    else:
+        aug = PrepStretched
 
-    fig = tfds.show_examples(data, info)
-    if job_dir is not None:
-        formatted = fname.format(time=strftime())
-        path = os.path.join(job_dir, formatted)
-        if formatted != fname:
-            print(f"saving figure to {path}")
-        with tf.io.gfile.GFile(path, "wb") as fp:
-            fig.savefig(fp)
+    aug = aug((size, size), data_format="channels_last")
+    # every case transforms the inputs to a normal distribution
+    # cutting off the preview after 5 standard deviations
+    data = data.map(lambda x: {**x, "image": tf.clip_by_value(
+        aug(x["image"]) / 5 + 0.5, 0., 1.)})
+
+    if n is None:
+        fig = tfds.show_examples(data, info)
+
+        if job_dir is not None:
+            formatted = fname.format(time=strftime(), index="")
+            path = os.path.join(job_dir, formatted)
+            if formatted != fname:
+                print(f"saving figure to {path}")
+            with tf.io.gfile.GFile(path, "wb") as fp:
+                fig.savefig(fp)
+    else:
+        import cv2
+
+        job_dir = "." if job_dir is None else job_dir
+        previewing = iter(data)
+        for i in range(n):
+            fig = next(previewing)["image"]
+            formatted = fname.format(time=strftime(), index=f"-{i}")
+            print(fig)
+            cv2.imwrite(os.path.join(job_dir, formatted), fig.numpy() * 256)
 
 def preview_cli(parser):
     parser.add_argument("dataset", nargs="?", help=(
@@ -48,6 +66,10 @@ def preview_cli(parser):
         "default directory for TFDS data, supports GCS buckets"))
     parser.add_argument("--size", metavar="N", type=int, help=(
         "set the output image size for each image previewed"))
+    parser.add_argument("--n", metavar="N", type=int, help=(
+        "save the first n images of the dataset (usually needs --no-augment "
+        "and --n)"))
+    parser.add_argument("--split", help="train")
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--pad", action="store_true", help=(
