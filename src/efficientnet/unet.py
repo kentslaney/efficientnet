@@ -95,13 +95,16 @@ class ResUNet(tf.keras.Model):
 class InstanceLoss(tf.keras.Loss):
     # sample_coefficient is the ratio of local variance to object variance
     # mean is of L_\inf distance of local samples (geometrically distributed)
-    def __init__(self, data_format, sample_coefficient=1, samples=100, mean=10):
+    def __init__(
+            self, data_format, sample_coefficient=4, samples=256, mean=16,
+            reweight=1):
         super().__init__()
         self.data_format = data_format
         self.dist = tfp.distributions.Geometric(probs=(1 / mean,))
         self.channel = 3 if data_format == 'channels_last' else 1
         self.spacial = tuple(i for i in range(1, 4) if i != self.channel)
         self.sample_coefficient, self.samples = sample_coefficient, samples
+        self.reweight = reweight
 
     def call(self, y_true, y_pred):
         # penalize each labeled object's latent space variance
@@ -162,7 +165,10 @@ class InstanceLoss(tf.keras.Loss):
         y_cmp = tf.gather_nd(y_true, coords)
         y_ref = tf.keras.ops.tile(tf.expand_dims(y_pred, self.channel), tile)
         y_obj = tf.keras.ops.tile(tf.expand_dims(y_true, self.channel), tile)
-        sample = (y_sample - y_ref) ** 2 * tf.where(y_obj == y_cmp, 1., -1.)
+        cmp = y_obj == y_cmp
+        reweight = self.reweight * (1 - tf.keras.ops.mean(
+                tf.cast(cmp, tf.float32), self.channel, keepdims=True))
+        sample = (y_sample - y_ref) ** 2 * tf.where(cmp, 1., -reweight)
         sample = tf.keras.ops.sum(sample) / tf.cast(
                 tf.keras.ops.sum(in_bounds), tf.float32)
 
@@ -173,8 +179,11 @@ class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
         return tf.keras.optimizers.Adam(lr)
 
     @cli_builder
-    def __init__(self, learning_rate=1e-6, dataset="ref_coco", size=224, **kw):
+    def __init__(
+            self, batch=2, learning_rate=1e-6, dataset="ref_coco", size=448,
+            **kw):
         super().__init__(
-                learning_rate=learning_rate, dataset=dataset, size=size, **kw)
+                batch=batch, learning_rate=learning_rate, dataset=dataset,
+                size=size, **kw)
         self.model = ResUNet(self.data_format)
         self.compile(InstanceLoss(self.data_format))
