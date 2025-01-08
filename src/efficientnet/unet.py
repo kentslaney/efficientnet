@@ -20,7 +20,7 @@ class ResUNet(tf.keras.Model):
         self.act = lambda: tf.keras.layers.Activation("relu")
         self.upsample = lambda: tf.keras.layers.UpSampling2D(
                 (2, 2), data_format=data_format)
-        self.build([16, 32, 64, 128, 256])
+        self._build([16, 32, 64, 128, 256])
 
     def conv_block(self, filters, strides):
         return [
@@ -42,7 +42,7 @@ class ResUNet(tf.keras.Model):
         for i in value:
             yield body
 
-    def build(self, filters):
+    def _build(self, filters):
         self.sequential = [
                 LayerFlags.PUSH,
                 self.conv(filters[0], kernel_size=(3, 3), strides=1),

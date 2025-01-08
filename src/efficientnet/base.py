@@ -200,7 +200,10 @@ class Trainer:
     @classmethod
     def train(cls, summary=False, absl=None, **kw):
         if summary:
-            cls(**kw).model.summary()
+            trainer = cls(**kw)
+            trainer.model(tf.keras.layers.Input(
+                    trainer.dataset.element_spec[0].shape[1:]))
+            trainer.model.summary()
         else:
             cls(**kw).fit()
 
