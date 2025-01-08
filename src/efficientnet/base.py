@@ -37,6 +37,9 @@ class Trainer:
             "lr decay per epoch after warmup"))
         parser.add_argument("--profile", type=int, action=RequiredLength(1, 2),
                             metavar="N", help="batches to profile")
+        parser.add_argument(
+            "--summary", action="store_true", help=(
+                "print the keras layer summary and exit"))
 
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument("--no-decay", dest="decay", action="store_false",
@@ -93,8 +96,7 @@ class Trainer:
     def __init__(self, base=relpath("jobs"), data_format=None, batch=64,
                  distribute=None, epochs=1000, decay=True, suffix="{time}",
                  learning_rate=6.25e-5, decay_warmup=5, decay_factor=0.99,
-                 resume=None, profile=(0,), supervised_mapping="one_hot",
-                 absl=None):
+                 resume=None, profile=(0,), supervised_mapping="one_hot"):
         self.batch, self.learning_rate = batch, learning_rate
         self._format, self.epochs = data_format, epochs
         self.decay_warmup, self.decay_factor = decay_warmup, decay_factor
@@ -196,8 +198,11 @@ class Trainer:
 
     # creates a class instance using the input keywords and starts training
     @classmethod
-    def train(cls, **kw):
-        cls(**kw).fit()
+    def train(cls, summary=False, absl=None, **kw):
+        if summary:
+            cls(**kw).model.summary()
+        else:
+            cls(**kw).fit()
 
     # calls the keras model class' fit function using the appropiate properties
     def fit(self):
