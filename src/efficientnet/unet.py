@@ -55,10 +55,9 @@ class ResUNet(tf.keras.Model):
                     *self.conv_block(filters[i], 1)]
             if i < len(filters) - 1:
                 self.skips += self.skip_block(filters[i], 2)
-        # TODO: why are there 2 convs in a row
         self.sequential += [
-                self.conv(filters[-1], kernel_size=(3, 3), strides=1),
-                self.conv(filters[-1], kernel_size=(3, 3), strides=1)]
+                *self.conv_block(filters[-1], 1),
+                *self.conv_block(filters[-1], 1)]
         for size in filters[:0:-1]:
             self.sequential += [
                     self.upsample(),
@@ -67,7 +66,8 @@ class ResUNet(tf.keras.Model):
                     *self.conv_block(size, 1),
                     LayerFlags.SKIP]
             self.skips += self.skip_block(size, 1)
-        # TODO: model currently ends with bn and act, should be sigmoid
+        self.sequential += [
+                self.conv(filters[0], kernel_size=(1, 1), activation="sigmoid")]
 
     def call(self, x):
         stack, skip, preempted = [], None, True

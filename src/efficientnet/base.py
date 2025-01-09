@@ -198,6 +198,7 @@ class Trainer:
 
     # creates a class instance using the input keywords and starts training
     @classmethod
+    @cli_builder
     def train(cls, summary=False, absl=None, **kw):
         if summary:
             trainer = cls(**kw)
