@@ -168,7 +168,7 @@ class InstanceLoss(tf.keras.Loss):
         y_ref = tf.keras.ops.tile(tf.expand_dims(y_pred, self.channel), tile)
         y_obj = tf.keras.ops.tile(tf.expand_dims(y_true, self.channel), tile)
         cmp = y_obj == y_cmp
-        reweight = self.reweight * (1 - tf.keras.ops.mean(
+        reweight = self.reweight / (1 - tf.keras.ops.mean(
                 tf.cast(cmp, tf.float32), self.channel, keepdims=True))
         sample = (y_sample - y_ref) ** 2 * tf.where(cmp, 1., -reweight)
         sample = tf.keras.ops.sum(sample) / tf.cast(
