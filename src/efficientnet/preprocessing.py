@@ -612,8 +612,14 @@ class PipelineCaller(Pipeline):
 class PrepEye(PipelineCaller, Convert01, Reformat):
     pass
 
-class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
+# class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
+class PrepStretched(
+        PipelineCaller, Convert01, PinShape, Stretch, Reformat,
+        PositionalEncoding):
     pass
 
-class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
+#class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
+class PrepCropped(
+        PipelineCaller, Convert01, PinShape, CenterCrop, Reformat,
+        PositionalEncoding):
     pass
