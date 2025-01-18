@@ -21,7 +21,7 @@ def cli_builder(f):
     @wraps(f)
     def wrapper(*args, **kw):
         args = tuple(param.default if arg is Default else arg
-                     for arg, param in zip(args, params))
+                     for arg, param in zip(args, params.values()))
         kw = {k: params[k].default if v is Default and k in params else v
               for k, v in kw.items()}
         return f(*args, **kw)

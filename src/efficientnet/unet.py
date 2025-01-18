@@ -1,7 +1,7 @@
 import tensorflow as tf
 from functools import partial
 from .base import RandAugmentTrainer, TFDSTrainer
-from .utils import RequiredLength, cli_builder, perimeter_pixel
+from .utils import RequiredLength, cli_builder, perimeter_pixel, Default
 import tensorflow_probability as tfp
 
 class LayerFlags:
@@ -97,6 +97,7 @@ class ResUNet(tf.keras.Model):
 class InstanceLoss(tf.keras.Loss):
     # sample_coefficient is the ratio of local variance to object variance
     # mean is of L_\inf distance of local samples (geometrically distributed)
+    @cli_builder
     def __init__(
             self, data_format, sample_coefficient=4, samples=256, mean=16,
             reweight=1):
@@ -180,12 +181,24 @@ class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
         return tf.keras.optimizers.Adam(lr)
 
+    @classmethod
+    def cli(cls, parser):
+        parser.add_argument("--sample-coefficient", type=float)
+        parser.add_argument("--samples", type=float)
+        parser.add_argument("--samples-mean-dist", type=float)
+        parser.add_argument("--samples-negative-reweight", type=float)
+        super().cli(parser)
+
     @cli_builder
     def __init__(
             self, batch=2, learning_rate=1e-6, dataset="ref_coco", size=448,
-            **kw):
+            sample_coefficient=Default, samples=Default,
+            samples_mean_dist=Default, samples_negative_reweight=Default, **kw):
         super().__init__(
                 batch=batch, learning_rate=learning_rate, dataset=dataset,
                 size=size, **kw)
         self.model = ResUNet(self.data_format)
-        self.compile(InstanceLoss(self.data_format))
+        self.compile(InstanceLoss(
+                self.data_format, sample_coefficient, samples,
+                samples_mean_dist, samples_negative_reweight
+            ))
