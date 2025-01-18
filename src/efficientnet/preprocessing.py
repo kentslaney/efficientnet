@@ -219,7 +219,7 @@ class WaveletTransform(Augmentation):
         resolution = 3
         rescaled = pi * im[..., tf.newaxis]
         rescaled *= 2 ** tf.reshape(tf.range(
-            1, resolution + 1, dtype=tf.float32), (1, 1, 1, -1))
+            resolution, dtype=tf.float32), (1, 1, 1, -1))
         return tf.concat(tf.cos(rescaled), -1)
 
 # renormalize color distributions and optionally transpose the color channel
@@ -568,9 +568,9 @@ class PositionalEncoding(Augmentation):
                 tf.range(0, ratio[0] + steps[0], steps[0], dtype=tf.float32),
                 tf.range(0, ratio[1] + steps[1], steps[1], dtype=tf.float32))
         x, y = x[:current[0], :current[1]], y[:current[0], :current[1]]
-        rescale = tf.range(1, resolution + 1, dtype=tf.float32)[None, None, :]
-        x = tf.cos(rescale * pi * 2 ** x[..., None])
-        y = tf.cos(rescale * pi * 2 ** y[..., None])
+        rescale = 2 ** tf.range(resolution, dtype=tf.float32)[None, None, :]
+        x = tf.cos(rescale * pi * x[..., None])
+        y = tf.cos(rescale * pi * y[..., None])
         if not self.channels_last:
             x, y = map(lambda each: tf.transpose(each, (2, 0, 1)), (x, y))
         return tf.concat((im, x, y), 2 if self.channels_last else 0)
