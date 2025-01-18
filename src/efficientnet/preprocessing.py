@@ -216,9 +216,9 @@ class WaveletTransform(Augmentation):
 
     def call(self, im):
         # 8 bit color, so the smallest wavelet will cycle once per 2 increments
-        resolution = 8
+        resolution = 3
         rescaled = pi * im[..., tf.newaxis]
-        rescaled *= tf.reshape(tf.range(
+        rescaled *= 2 ** tf.reshape(tf.range(
             1, resolution + 1, dtype=tf.float32), (1, 1, 1, -1))
         return tf.concat(tf.cos(rescaled), -1)
 
@@ -559,7 +559,7 @@ class PositionalEncoding(Augmentation):
     required=True
 
     def call(self, im):
-        resolution = 16
+        resolution = 8
         ratio = self.pinned_shape / tf.reduce_max(self.pinned_shape)
         current = tf.shape(im)[
                 slice(0, 2) if self.channels_last else slice(1, 3)]
@@ -569,8 +569,8 @@ class PositionalEncoding(Augmentation):
                 tf.range(0, ratio[1] + steps[1], steps[1], dtype=tf.float32))
         x, y = x[:current[0], :current[1]], y[:current[0], :current[1]]
         rescale = tf.range(1, resolution + 1, dtype=tf.float32)[None, None, :]
-        x = tf.cos(rescale * pi * x[..., None])
-        y = tf.cos(rescale * pi * y[..., None])
+        x = tf.cos(rescale * pi * 2 ** x[..., None])
+        y = tf.cos(rescale * pi * 2 ** y[..., None])
         if not self.channels_last:
             x, y = map(lambda each: tf.transpose(each, (2, 0, 1)), (x, y))
         return tf.concat((im, x, y), 2 if self.channels_last else 0)
