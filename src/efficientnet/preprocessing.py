@@ -575,6 +575,22 @@ class PositionalEncoding(Augmentation):
             x, y = map(lambda each: tf.transpose(each, (2, 0, 1)), (x, y))
         return tf.concat((im, x, y), 2 if self.channels_last else 0)
 
+class LinearPositionalEncoding(Augmentation):
+    required=True
+
+    def call(self, im):
+        ratio = self.pinned_shape / tf.reduce_max(self.pinned_shape)
+        current = tf.shape(im)[
+                slice(0, 2) if self.channels_last else slice(1, 3)]
+        steps = ratio / (tf.cast(current, dtype=tf.float64) - 1.)
+        x, y = tf.meshgrid(
+                tf.range(0, ratio[0] + steps[0], steps[0], dtype=tf.float32),
+                tf.range(0, ratio[1] + steps[1], steps[1], dtype=tf.float32))
+        x, y = x[:current[0], :current[1]], y[:current[0], :current[1]]
+        newaxis = (..., None) if self.channels_last else (None,)
+        x, y = x[newaxis], y[newaxis]
+        return tf.concat((im, x, y), 2 if self.channels_last else 0)
+
 # endpoints
 class Randomize:
     def __init__(self, *args, n=3, m=.4, **kw):
@@ -594,13 +610,13 @@ class Randomize:
 #class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
 class RandAugmentPadded(
         Randomize, Adjust, PinShape, PaddedTransforms, Reformat,
-        PositionalEncoding):
+        LinearPositionalEncoding):
     pass
 
 #class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
 class RandAugmentCropped(
         Randomize, Adjust, PinShape, CroppedTransforms, Reformat,
-        PositionalEncoding):
+        LinearPositionalEncoding):
     pass
 
 class PipelineCaller(Pipeline):
@@ -615,11 +631,11 @@ class PrepEye(PipelineCaller, Convert01, Reformat):
 # class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
 class PrepStretched(
         PipelineCaller, Convert01, PinShape, Stretch, Reformat,
-        PositionalEncoding):
+        LinearPositionalEncoding):
     pass
 
 #class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
 class PrepCropped(
         PipelineCaller, Convert01, PinShape, CenterCrop, Reformat,
-        PositionalEncoding):
+        LinearPositionalEncoding):
     pass
