@@ -216,7 +216,7 @@ class WaveletTransform(Augmentation):
 
     def call(self, im):
         # 8 bit color, so the smallest wavelet will cycle once per 2 increments
-        resolution = 3
+        resolution = 8
         rescaled = pi * im[..., tf.newaxis]
         rescaled *= 2 ** tf.reshape(tf.range(
             resolution, dtype=tf.float32), (1, 1, 1, -1))

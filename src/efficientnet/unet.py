@@ -10,6 +10,7 @@ class LayerFlags:
     SKIP = object()
 
 # arXiv:1711.10684v1
+# https://github.com/nikhilroxtomar/Deep-Residual-Unet/blob/master/Deep%20Residual%20UNet.ipynb
 class ResUNet(tf.keras.Model):
     def __init__(self, data_format):
         super().__init__()
@@ -93,6 +94,13 @@ class ResUNet(tf.keras.Model):
 
     def compute_loss(self, x, y, y_pred, sample_weight):
         return self.loss.call(y, y_pred)
+
+class ResUNet3(ResUNet):
+    def _build(self, filters):
+        super()._build(filters)
+        self.sequential.pop()
+        self.sequential += [
+                self.conv(3, kernel_size=(1, 1), activation="sigmoid")]
 
 class InstanceLoss(tf.keras.Loss):
     # sample_coefficient is the ratio of local variance to object variance
