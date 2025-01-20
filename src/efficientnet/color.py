@@ -132,7 +132,8 @@ class ViewingConditions(_ViewingConditions):
         e_t = (jnp.cos(h_rad + 2) + 3.8) / 4
         endpoint = lambda n: \
                 (hprime - tf.gather(h_i, [i + n])) / tf.gather(e_i, [i + n])
-        h = 100 * (tf.cast(i, tf.float64) + endpoint(0) / (endpoint(0) - endpoint(1)))
+        h = 100 * (tf.cast(i, tf.float64) + endpoint(0) / (
+            endpoint(0) - endpoint(1)))
 
         a_ = ((achromatic @ rgb_a - 0.305) * self.n_bb)
         tf.debugging.assert_non_negative(

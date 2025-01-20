@@ -2,6 +2,7 @@
 This repo provides a clean implementation of EfficientNet.
 
 ## TODO
+- fix null training values
 - do everything in color as float32
 - samples by pixels without a mask shouldn't add to loss
 - decide whether a pixel can be marked as multiple masks or not
