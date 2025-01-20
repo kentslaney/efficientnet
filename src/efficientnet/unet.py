@@ -117,7 +117,14 @@ class InstanceLoss(tf.keras.Loss):
         self.sample_coefficient, self.samples = sample_coefficient, samples
         self.reweight = reweight
 
+    def channel_transform(self, y_pred):
+        return y_pred
+
+    def loss_dist(self, y_sample, y_pred):
+        return (y_sample - y_pred) ** 2
+
     def call(self, y_true, y_pred):
+        y_pred = self.channel_transform(y_pred)
         # penalize each labeled object's latent space variance
         tile = [y_pred.shape[i] if i == self.channel else 1 for i in range(4)]
         tile = tile[1:]
@@ -179,11 +186,29 @@ class InstanceLoss(tf.keras.Loss):
         cmp = y_obj == y_cmp
         reweight = self.reweight / (1 - tf.keras.ops.mean(
                 tf.cast(cmp, tf.float32), self.channel, keepdims=True))
-        sample = (y_sample - y_ref) ** 2 * tf.where(cmp, 1., -reweight)
+        sample = self.loss_dist(y_sample, y_ref) * tf.where(cmp, 1., -reweight)
         sample = tf.keras.ops.sum(sample) / tf.cast(
                 tf.keras.ops.sum(in_bounds), tf.float32)
 
         return std + self.sample_coefficient * sample
+
+class ColorInstanceLoss(InstanceLoss):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        from color import ViewingConditions
+        self.vc = ViewingConditions()
+
+    def channel_transform(self, y_pred):
+        rgb_first = tf.transpose(y_pred, (self.channel, 0, *self.spacial))
+        ucs = self.vc.ucs(tf.cast(tf.reshape(rgb_first, (3, -1)), tf.float64))
+        ucs32 = tf.cast(ucs, tf.float32)
+        jab_first = tf.reshape(tf.convert_to_tensor(ucs32), rgb_first.shape)
+        axes = (*range(1, self.channel + 1), 0, *range(self.channel + 1, 4))
+        return tf.transpose(jab_first, axes)
+
+    def loss_dist(self, y_sample, y_pred):
+        # CIECAM02 scales the sigmod by a factor of ~100
+        return self.vc.delta(y_sample, y_pred, self.channel + 1) / 100.
 
 class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
@@ -205,8 +230,25 @@ class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
         super().__init__(
                 batch=batch, learning_rate=learning_rate, dataset=dataset,
                 size=size, **kw)
+        self._build(
+                sample_coefficient=Default, samples=Default,
+                samples_mean_dist=Default, samples_negative_reweight=Default)
+
+    def _build(
+            self, sample_coefficient, samples, samples_mean_dist,
+            samples_negative_reweight):
         self.model = ResUNet(self.data_format)
         self.compile(InstanceLoss(
+                self.data_format, sample_coefficient, samples,
+                samples_mean_dist, samples_negative_reweight
+            ))
+
+class UNetColorTrainer(UNetTrainer):
+    def _build(
+            self, sample_coefficient, samples, samples_mean_dist,
+            samples_negative_reweight):
+        self.model = ResUNet3(self.data_format)
+        self.compile(ColorInstanceLoss(
                 self.data_format, sample_coefficient, samples,
                 samples_mean_dist, samples_negative_reweight
             ))

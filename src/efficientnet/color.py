@@ -125,7 +125,7 @@ class ViewingConditions(_ViewingConditions):
         sign = jnp.sign(rgb_c)
         rescaled = (sign * self.f_l * rgb_c) ** 0.42
         rgb_a = sign * 400 * (rescaled / (rescaled + 27.13)) + 0.1
-        a, b = M_AB @ rgb_a
+        a, b = tf.unstack(M_AB @ rgb_a)
         h_rad = jnp.arctan2(b, a) % (2 * jnp.pi)
         hprime = jnp.select([h_rad < h_i[0], True], [h_rad + 2 * jnp.pi, h_rad])
         i = tf.searchsorted(h_i, hprime, side="right") - 1
@@ -159,7 +159,7 @@ class ViewingConditions(_ViewingConditions):
         b = m * jnp.sin(jch.h_)
         return Jab(j, a, b)
 
-    def delta(self, jab0, jab1):
+    def delta(self, jab0, jab1, axis=0):
         x, y = map(jnp.asarray, (jab0, jab1))
-        eprime = jnp.sqrt(jnp.sum((x - y) ** 2))
+        eprime = jnp.sqrt(jnp.sum((x - y) ** 2, axis=axis, keepdims=True))
         return 1.41 * eprime ** 0.63
