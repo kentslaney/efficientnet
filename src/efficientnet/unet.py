@@ -207,8 +207,7 @@ class ColorInstanceLoss(InstanceLoss):
         return tf.transpose(jab_first, axes)
 
     def loss_dist(self, y_sample, y_pred):
-        # CIECAM02 scales the sigmod by a factor of ~100
-        return self.vc.delta(y_sample, y_pred, self.channel + 1) / 100.
+        return self.vc.delta(y_sample, y_pred, self.channel + 1)
 
 class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
     def opt(self, lr):
