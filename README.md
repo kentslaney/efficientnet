@@ -1,6 +1,14 @@
 # EfficientNet
 This repo provides a clean implementation of EfficientNet.
 
+## Training
+```
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+python -m efficientnet train base
+```
+
 ## TODO
 - fix null training values
 - do everything in color as float32

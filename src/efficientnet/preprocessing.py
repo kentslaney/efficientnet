@@ -607,16 +607,16 @@ class Randomize:
             return im
         return im, self.recall(mask)
 
-#class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
-class RandAugmentPadded(
-        Randomize, Adjust, PinShape, PaddedTransforms, Reformat,
-        LinearPositionalEncoding):
+# class RandAugmentPadded(
+#         Randomize, Adjust, PinShape, PaddedTransforms, Reformat,
+#         LinearPositionalEncoding):
+class RandAugmentPadded(Randomize, Adjust, PaddedTransforms, Reformat):
     pass
 
-#class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
-class RandAugmentCropped(
-        Randomize, Adjust, PinShape, CroppedTransforms, Reformat,
-        LinearPositionalEncoding):
+# class RandAugmentCropped(
+#         Randomize, Adjust, PinShape, CroppedTransforms, Reformat,
+#         LinearPositionalEncoding):
+class RandAugmentCropped(Randomize, Adjust, CroppedTransforms, Reformat):
     pass
 
 class PipelineCaller(Pipeline):
@@ -628,14 +628,14 @@ class PipelineCaller(Pipeline):
 class PrepEye(PipelineCaller, Convert01, Reformat):
     pass
 
-# class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
-class PrepStretched(
-        PipelineCaller, Convert01, PinShape, Stretch, Reformat,
-        LinearPositionalEncoding):
+# class PrepStretched(
+#         PipelineCaller, Convert01, PinShape, Stretch, Reformat,
+#         LinearPositionalEncoding):
+class PrepStretched(PipelineCaller, Convert01, Stretch, Reformat):
     pass
 
-#class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
-class PrepCropped(
-        PipelineCaller, Convert01, PinShape, CenterCrop, Reformat,
-        LinearPositionalEncoding):
+# class PrepCropped(
+#         PipelineCaller, Convert01, PinShape, CenterCrop, Reformat,
+#         LinearPositionalEncoding):
+class PrepCropped(PipelineCaller, Convert01, CenterCrop, Reformat):
     pass

@@ -11,7 +11,7 @@ class MBConv(tf.keras.layers.Layer):
     drop = tf.keras.layers.Dropout
 
     def activation(self, *args, **kw):
-        return tf.nn.swish(*args, **kw)
+        return tf.nn.silu(*args, **kw)
 
     def __init__(self, size=3, outputs=32, expand=6, residuals=True, strides=1,
                  se_ratio=0.25, dropout=0, data_format='channels_first', **kw):
@@ -22,8 +22,9 @@ class MBConv(tf.keras.layers.Layer):
                 se_ratio, dropout, data_format
         self.channel = -1 if data_format == 'channels_last' else 1
         self.spacial = (1, 2) if data_format == 'channels_last' else (2, 3)
-        self.residuals = residuals and bool(tf.reduce_all(
-            strides == tf.constant(1)))
+        self.residuals = residuals and (
+                strides == 1 if isinstance(strides, int) else all(
+                    i == 1 for i in strides))
 
     def pool(self, inputs):
         return tf.reduce_mean(inputs, self.spacial, True)
@@ -65,18 +66,18 @@ class MBConv(tf.keras.layers.Layer):
 
         if self.expand != 1:
             x = self._expand_conv(x)
-            x = self.activation(self._expand_bn(x, training))
+            x = self.activation(self._expand_bn(x, training=training))
 
         x = self._depthwise(x)
-        x = self.activation(self._depthwise_bn(x, training))
+        x = self.activation(self._depthwise_bn(x, training=training))
 
         if 0 < self.se_ratio <= 1:
             x *= self._se_expand(self._se_reduce(self.pool(x)))
 
-        x = self._project_bn(self._project_conv(x), training)
+        x = self._project_bn(self._project_conv(x), training=training)
 
         if self.residuals:
-            x = self.drop(x, training) + inputs
+            x = self.drop(x, training=training) + inputs
 
         return x
 

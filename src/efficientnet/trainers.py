@@ -8,7 +8,8 @@ from .mbconv import MBConv
 from .simple import SimpleTrainer
 from .unet import UNetTrainer, UNetColorTrainer
 
-MovingAverage = ExponentialMovingAverage(0.99)
+# MovingAverage = ExponentialMovingAverage(0.99)
+MovingAverage = lambda x: x
 
 presets = [
     ("EfficientNet-B0", 224, 1.0, 1.0, 0.2),

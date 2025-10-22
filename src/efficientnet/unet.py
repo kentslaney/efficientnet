@@ -107,7 +107,7 @@ class InstanceLoss(tf.keras.Loss):
     # mean is of L_\inf distance of local samples (geometrically distributed)
     @cli_builder
     def __init__(
-            self, data_format, sample_coefficient=4, samples=256, mean=16,
+            self, data_format, sample_coefficient=4, samples=32, mean=16,
             reweight=1):
         super().__init__()
         self.data_format = data_format
@@ -200,9 +200,9 @@ class ColorInstanceLoss(InstanceLoss):
 
     def channel_transform(self, y_pred):
         rgb_first = tf.transpose(y_pred, (self.channel, 0, *self.spacial))
-        ucs = self.vc.ucs(tf.cast(tf.reshape(rgb_first, (3, -1)), tf.float64))
-        ucs32 = tf.cast(ucs, tf.float32)
-        jab_first = tf.reshape(tf.convert_to_tensor(ucs32), rgb_first.shape)
+        recast = tf.cast(tf.reshape(rgb_first, (3, -1)), tf.float64)
+        ucs = tf.cast(self.vc.projected(recast), tf.float32)
+        jab_first = tf.reshape(tf.convert_to_tensor(ucs), rgb_first.shape)
         axes = (*range(1, self.channel + 1), 0, *range(self.channel + 1, 4))
         return tf.transpose(jab_first, axes)
 
@@ -223,7 +223,7 @@ class UNetTrainer(RandAugmentTrainer, TFDSTrainer):
 
     @cli_builder
     def __init__(
-            self, batch=2, learning_rate=1e-6, dataset="ref_coco", size=448,
+            self, batch=32, learning_rate=1e-6, dataset="ref_coco", size=224,
             sample_coefficient=Default, samples=Default,
             samples_mean_dist=Default, samples_negative_reweight=Default, **kw):
         super().__init__(

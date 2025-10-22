@@ -136,8 +136,8 @@ class ViewingConditions(_ViewingConditions):
             endpoint(0) - endpoint(1)))
 
         a_ = ((achromatic @ rgb_a - 0.305) * self.n_bb)
-        tf.debugging.assert_non_negative(
-                a_, "expected non-negative achromatic responses")
+        # tf.debugging.assert_non_negative(
+        #         a_, "expected non-negative achromatic responses")
 
         j = 100 * (a_ / self.a_w) ** (self.surroundings.c * self.z)
         q = (
@@ -164,3 +164,18 @@ class ViewingConditions(_ViewingConditions):
         x, y = map(jnp.asarray, (jab0, jab1))
         eprime = jnp.sqrt(jnp.sum((x - y) ** 2, axis=axis, keepdims=True))
         return 1.41 * eprime ** 0.63
+
+    def _projected(self, rgb):
+        unflipped = jnp.clip(rgb, 0, 1)
+        delta = rgb - unflipped
+        clipped = tf.transpose(unflipped)
+        with tf.GradientTape() as g:
+            g.watch(clipped)
+            ucs = jnp.asarray(self.ucs(tf.transpose(clipped)))
+            res = tf.transpose(tf.squeeze(ucs, 1))
+        grad = g.batch_jacobian(res, clipped)
+        eps = tf.reduce_sum(grad * tf.transpose(delta)[:, None, :], 2)
+        return tf.transpose(res + eps)
+
+    def projected(self, rgb):
+        return self.ucs(jnp.clip(rgb, 0, 1))

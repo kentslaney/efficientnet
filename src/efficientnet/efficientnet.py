@@ -90,10 +90,10 @@ class Embedding(tf.keras.Model):
             x = tf.transpose(x, [3, 0, 1, 2])
 
         x = self._stem_conv(x)
-        x = tf.nn.swish(self._stem_bn(x, training))
+        x = tf.nn.silu(self._stem_bn(x, training=training))
 
         for block in self._blocks:
-            x = block(x, training)
+            x = block(x, training=training)
         return x
 
 class Classifier(Embedding):
@@ -118,5 +118,5 @@ class Classifier(Embedding):
 
     def call(self, inputs, training):
         x = super().call(inputs, training)
-        x = tf.nn.swish(self._head_bn(self._head_conv(x), training))
-        return self._fc(self._head_drop(self.pool(x), training))
+        x = tf.nn.silu(self._head_bn(self._head_conv(x), training=training))
+        return self._fc(self._head_drop(self.pool(x), training=training))
